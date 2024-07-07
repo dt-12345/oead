@@ -482,6 +482,9 @@ struct WriteContext {
         writer.RunAt(node.offset_in_container, [&](size_t) { writer.Write<u32>(it->second); });
       } else {
         const auto type = node.data->GetType();
+        if (IsContainerType(type)) {
+          writer.AlignUp(4); // unsure if necessary but a lot of other tools will break from unaligned reads so compatiblity I guess
+        }
         const size_t offset = type != Byml::Type::File ? writer.Tell()
                                 : util::AlignUp(node.data->GetFile().align, writer.Tell() + 8) - 8;
         writer.RunAt(node.offset_in_container, [&](size_t) { writer.Write<u32>(offset); });
