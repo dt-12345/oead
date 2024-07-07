@@ -123,7 +123,7 @@ Byml ParseYamlNode(const c4::yml::NodeRef& node) {
     } else if (yml::RymlGetValTag(node) == "!h32") {
       auto hash = Byml::Hash32{};
       for (const auto& child : node) {
-        u32 key = std::stoul(child.key().data(), nullptr, 16);
+        u32 key = std::stoul(std::string(child.key().data(), child.key().size()), nullptr, 16);
         Byml value = ParseYamlNode(child);
         hash.emplace(key, std::move(value));
       }
@@ -131,7 +131,7 @@ Byml ParseYamlNode(const c4::yml::NodeRef& node) {
     } else if (yml::RymlGetValTag(node) == "!h64") {
       auto hash = Byml::Hash64{};
       for (const auto& child : node) {
-        u64 key = std::stoull(child.key().data(), nullptr, 16);
+        u64 key = std::stoull(std::string(child.key().data(), child.key().size()), nullptr, 16);
         Byml value = ParseYamlNode(child);
         hash.emplace(key, std::move(value));
       }
@@ -139,7 +139,7 @@ Byml ParseYamlNode(const c4::yml::NodeRef& node) {
     } else if (yml::RymlGetValTag(node) == "!file") {
       const auto& align = node["Alignment"];
       const auto& data = node["Data"];
-      return Byml::File{
+      return Byml::BinaryWithAlignment{
         byml::ScalarToValue(yml::RymlGetValTag(data),
                             yml::ParseScalar(data, byml::RecognizeTag)).GetBinary(),
         byml::ScalarToValue(yml::RymlGetValTag(align),
@@ -181,13 +181,13 @@ std::string Byml::ToText() const {
         [&](const String& v) { emitter.EmitString(v); },
         [&](const std::vector<u8>& v) {
           const std::string encoded =
-              absl::Base64Escape(absl::string_view((const char*)v.data(), v.size()));
+              absl::Base64Escape(absl::string_view(reinterpret_cast<const char*>(v.data()), v.size()));
           emitter.EmitString(encoded, "tag:yaml.org,2002:binary");
         },
-        [&](const File& v) {
+        [&](const BinaryWithAlignment& v) {
           yml::LibyamlEmitter::MappingScope scope{emitter, "!file", YAML_BLOCK_MAPPING_STYLE};
           const std::string encoded =
-              absl::Base64Escape(absl::string_view((const char*)v.data.data(), v.data.size()));
+              absl::Base64Escape(absl::string_view(reinterpret_cast<const char*>(v.data.data()), v.data.size()));
           emitter.EmitString("Alignment");
           emitter.EmitScalar(absl::StrFormat("0x%08x", v.align), false, false, "!u");
           emitter.EmitString("Data");

@@ -53,7 +53,7 @@ public:
     Hash64,
     String,
     Binary,
-    File,
+    BinaryWithAlignment,
     Array,
     Dictionary,
     Bool,
@@ -72,10 +72,10 @@ public:
   using Array = std::vector<Byml>;
   using Dictionary = absl::btree_map<std::string, Byml>;
 
-  using File = BinaryAligned;
+  using BinaryWithAlignment = BinaryAligned;
 
   using Value = util::Variant<Type, Null, std::unique_ptr<Hash32>, std::unique_ptr<Hash64>, std::unique_ptr<String>,
-                              std::unique_ptr<std::vector<u8>>, std::unique_ptr<File>, std::unique_ptr<Array>,
+                              std::unique_ptr<std::vector<u8>>, std::unique_ptr<BinaryWithAlignment>, std::unique_ptr<Array>,
                               std::unique_ptr<Dictionary>, bool, S32, F32, U32, S64, U64, F64>;
 
   Byml() = default;
@@ -184,14 +184,14 @@ public:
   Array& GetArray();
   String& GetString();
   std::vector<u8>& GetBinary();
-  File& GetFile();
+  BinaryWithAlignment& GetBinaryWithAlignment();
   const Hash32& GetHash32() const;
   const Hash64& GetHash64() const;
   const Dictionary& GetDictionary() const;
   const Array& GetArray() const;
   const String& GetString() const;
   const std::vector<u8>& GetBinary() const;
-  const File& GetFile() const;
+  const BinaryWithAlignment& GetBinaryWithAlignment() const;
   bool GetBool() const;
   s32 GetInt() const;
   u32 GetUInt() const;
