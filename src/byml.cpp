@@ -64,10 +64,10 @@ enum class NodeType : u8 {
   Array = 0xc0,
   Dictionary = 0xc1,
   StringTable = 0xc2,
-  PathTable = 0xc3, // Unsupported
-  RemappedDictionary = 0xc4, // Unsupported
+  PathTable = 0xc3,           // Unsupported
+  RemappedDictionary = 0xc4,  // Unsupported
   RelocatedStringTable = 0xc5,
-  MonoTypedArray = 0xc8, // Unsupported
+  MonoTypedArray = 0xc8,  // Unsupported
   Bool = 0xd0,
   Int = 0xd1,
   Float = 0xd2,
@@ -80,9 +80,11 @@ enum class NodeType : u8 {
 
 constexpr NodeType GetNodeType(Byml::Type type) {
   constexpr std::array map{
-      NodeType::Null, NodeType::Hash32, NodeType::Hash64, NodeType::String, NodeType::Binary,
-      NodeType::BinaryWithAlignment, NodeType::Array, NodeType::Dictionary, NodeType::Bool, NodeType::Int,
-      NodeType::Float, NodeType::UInt, NodeType::Int64,  NodeType::UInt64, NodeType::Double,
+      NodeType::Null,   NodeType::Hash32,     NodeType::Hash64,
+      NodeType::String, NodeType::Binary,     NodeType::BinaryWithAlignment,
+      NodeType::Array,  NodeType::Dictionary, NodeType::Bool,
+      NodeType::Int,    NodeType::Float,      NodeType::UInt,
+      NodeType::Int64,  NodeType::UInt64,     NodeType::Double,
   };
   return map[u8(type)];
 }
@@ -99,7 +101,8 @@ constexpr bool IsLongType(T type) {
 
 template <typename T = NodeType>
 constexpr bool IsNonInlineType(T type) {
-  return IsContainerType(type) || IsLongType(type) || type == T::Binary || type == T::BinaryWithAlignment;
+  return IsContainerType(type) || IsLongType(type) || type == T::Binary ||
+         type == T::BinaryWithAlignment;
 }
 
 constexpr bool IsValidVersion(int version) {
@@ -114,7 +117,8 @@ public:
       return;
     const auto type = reader.Read<NodeType>(offset);
     const auto num_entries = reader.ReadU24();
-    if (!type || (*type != NodeType::StringTable && *type != NodeType::RelocatedStringTable) || !num_entries)
+    if (!type || (*type != NodeType::StringTable && *type != NodeType::RelocatedStringTable) ||
+        !num_entries)
       throw InvalidDataError("Invalid string table");
     if (*type != NodeType::RelocatedStringTable) {
       m_offset = offset;
@@ -168,12 +172,11 @@ public:
         m_reader, *m_reader.Read<u32>(offsetof(ResHeader, hash_key_table_offset)));
     m_string_table =
         StringTableParser(m_reader, *m_reader.Read<u32>(offsetof(ResHeader, string_table_offset)));
-        
+
     // In MK8 byamls, there is an extra offset to a path table here
     u32 root_node_offset = *m_reader.Read<u32>(offsetof(ResHeader, root_node_offset));
     size_t header_end = m_reader.Tell();
-    if (root_node_offset != 0)
-    {
+    if (root_node_offset != 0) {
       const auto type = m_reader.Read<NodeType>(root_node_offset);
       if (type == NodeType::PathTable)
         throw UnsupportedError("Path nodes unsupported");
@@ -186,7 +189,8 @@ public:
   Byml Parse() {
     if (m_root_node_offset == 0)
       return Byml::Null();
-    return ParseContainerNode(m_root_node_offset); // version 8-10 support non-container root nodes which is unsupported
+    return ParseContainerNode(
+        m_root_node_offset);  // version 8-10 support non-container root nodes which is unsupported
   }
 
 private:
@@ -216,7 +220,8 @@ private:
       const u32 size = m_reader.Read<u32>(data_offset).value();
       const u32 align = m_reader.Read<u32>().value();
       return Byml{Byml::BinaryWithAlignment{{m_reader.span().begin() + data_offset + 8,
-                                  m_reader.span().begin() + data_offset + 8 + size}, align}};
+                                             m_reader.span().begin() + data_offset + 8 + size},
+                                            align}};
     }
     case NodeType::Bool:
       return *raw != 0;
@@ -248,7 +253,7 @@ private:
   Byml ParseHash32Node(u32 offset, u32 size) {
     Byml::Hash32 result;
     const u32 types_offset = offset + 4 + 8 * size;
-    for (u32 i = 0; i< size; ++i) {
+    for (u32 i = 0; i < size; ++i) {
       const auto type = m_reader.Read<NodeType>(types_offset + i);
       const auto hash = m_reader.Read<u32>(offset + 4 + 8 * i).value();
       result.emplace(hash, ParseContainerChildNode(offset + 8 + 8 * i, type.value()));
@@ -259,7 +264,7 @@ private:
   Byml ParseHash64Node(u32 offset, u32 size) {
     Byml::Hash64 result;
     const u32 types_offset = offset + 4 + 12 * size;
-    for (u32 i = 0; i< size; ++i) {
+    for (u32 i = 0; i < size; ++i) {
       const auto type = m_reader.Read<NodeType>(types_offset + i);
       const auto hash = m_reader.Read<u64>(offset + 4 + 12 * i);
       result.emplace(*hash, ParseContainerChildNode(offset + 8 + 12 * i, type.value()));
@@ -483,10 +488,13 @@ struct WriteContext {
       } else {
         const auto type = node.data->GetType();
         if (IsContainerType(type)) {
-          writer.AlignUp(4); // unsure if necessary but a lot of other tools will break from unaligned reads so compatiblity I guess
+          writer.AlignUp(4);  // unsure if necessary but a lot of other tools will break from
+                              // unaligned reads so compatiblity I guess
         }
-        const size_t offset = type != Byml::Type::BinaryWithAlignment ? writer.Tell()
-                                : util::AlignUp(node.data->GetBinaryWithAlignment().align, writer.Tell() + 8) - 8;
+        const size_t offset =
+            type != Byml::Type::BinaryWithAlignment ?
+                writer.Tell() :
+                util::AlignUp(node.data->GetBinaryWithAlignment().align, writer.Tell() + 8) - 8;
         writer.RunAt(node.offset_in_container, [&](size_t) { writer.Write<u32>(offset); });
         non_inline_node_data.emplace(*node.data, offset);
         if (IsContainerType(type))

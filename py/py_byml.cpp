@@ -117,15 +117,17 @@ void BindByml(py::module& parent) {
   BindMap<Byml::Dictionary>(m, "Dictionary");
   BindMap<Byml::Hash32>(m, "Hash32");
   BindMap<Byml::Hash64>(m, "Hash64");
-  
+
   py::class_<Byml::BinaryWithAlignment> clas(m, "BinaryWithAlignment");
-  clas
-    .def(py::init<>())
-    .def(py::init<std::vector<u8>, U32>())
-    .def(py::self == py::self)
-    .def_readwrite("data", &Byml::BinaryWithAlignment::data)
-    .def_readwrite("alignment", &Byml::BinaryWithAlignment::align)
-    .def("__copy__", [](const Byml::BinaryWithAlignment& f) { return Byml::BinaryWithAlignment(f); })
-    .def("__deepcopy__", [](const Byml::BinaryWithAlignment& f, py::dict) { return Byml::BinaryWithAlignment(f); });
+  clas.def(py::init<>())
+      .def(py::init<std::vector<u8>, U32>())
+      .def(py::self == py::self)
+      .def_readwrite("data", &Byml::BinaryWithAlignment::data)
+      .def_readwrite("alignment", &Byml::BinaryWithAlignment::align)
+      .def("__copy__",
+           [](const Byml::BinaryWithAlignment& f) { return Byml::BinaryWithAlignment(f); })
+      .def("__deepcopy__", [](const Byml::BinaryWithAlignment& f, py::dict) {
+        return Byml::BinaryWithAlignment(f);
+      });
 }
 }  // namespace oead::bind

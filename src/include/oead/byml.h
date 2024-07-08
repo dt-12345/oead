@@ -40,7 +40,7 @@ namespace oead {
 struct BinaryAligned {
   std::vector<u8> data;
   u32 align;
-  
+
   OEAD_DEFINE_FIELDS(BinaryAligned, data, align);
 };
 
@@ -74,8 +74,9 @@ public:
 
   using BinaryWithAlignment = BinaryAligned;
 
-  using Value = util::Variant<Type, Null, std::unique_ptr<Hash32>, std::unique_ptr<Hash64>, std::unique_ptr<String>,
-                              std::unique_ptr<std::vector<u8>>, std::unique_ptr<BinaryWithAlignment>, std::unique_ptr<Array>,
+  using Value = util::Variant<Type, Null, std::unique_ptr<Hash32>, std::unique_ptr<Hash64>,
+                              std::unique_ptr<String>, std::unique_ptr<std::vector<u8>>,
+                              std::unique_ptr<BinaryWithAlignment>, std::unique_ptr<Array>,
                               std::unique_ptr<Dictionary>, bool, S32, F32, U32, S64, U64, F64>;
 
   Byml() = default;
