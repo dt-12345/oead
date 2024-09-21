@@ -70,6 +70,8 @@ struct Field {
     Float = 3,
     /// Null-terminated string.
     String = 4,
+    /// Binary data blob
+    Bytes = 5,
   };
 
   enum class Flag : u16 {
@@ -185,6 +187,18 @@ private:
   [[maybe_unused]] u32 padding = 0;
 };
 
+/// For defining datasheet structures.
+struct Bytes {
+  tcb::span<u8> Span() const { return {data, size}; }
+  operator tcb::span<u8>() const { return Span(); }
+
+  u8* data = nullptr;
+  u32 size = 0;
+
+private:
+  [[maybe_unused]] u32 padding = 0;
+};
+
 using FieldMap = absl::flat_hash_map<std::string_view, ResField*>;
 FieldMap MakeFieldMap(tcb::span<ResField> fields);
 
@@ -196,11 +210,13 @@ struct Data {
     Int,
     Float,
     String,
+    Bytes,
     StructArray,
     BoolArray,
     IntArray,
     FloatArray,
     StringArray,
+    ByteArray,
     Null,
   };
 
@@ -211,18 +227,20 @@ struct Data {
 #else
   using Struct = absl::flat_hash_map<std::string, Data>;
 #endif
-  using Variant = util::Variant<Type,                                       //
-                                std::unique_ptr<Struct>,                    //
-                                bool,                                       //
-                                int,                                        //
-                                float,                                      //
-                                std::unique_ptr<std::string>,               //
-                                std::unique_ptr<std::vector<Struct>>,       //
-                                std::unique_ptr<std::vector<bool>>,         //
-                                std::unique_ptr<std::vector<int>>,          //
-                                std::unique_ptr<std::vector<float>>,        //
-                                std::unique_ptr<std::vector<std::string>>,  //
-                                Null                                        //
+  using Variant = util::Variant<Type,                                           //
+                                std::unique_ptr<Struct>,                        //
+                                bool,                                           //
+                                int,                                            //
+                                float,                                          //
+                                std::unique_ptr<std::string>,                   //
+                                std::unique_ptr<std::vector<u8>>,               //
+                                std::unique_ptr<std::vector<Struct>>,           //
+                                std::unique_ptr<std::vector<bool>>,             //
+                                std::unique_ptr<std::vector<int>>,              //
+                                std::unique_ptr<std::vector<float>>,            //
+                                std::unique_ptr<std::vector<std::string>>,      //
+                                std::unique_ptr<std::vector<std::vector<u8>>>,  //
+                                Null                                            //
                                 >;
 
   Data() : v{Null{}} {}
@@ -239,7 +257,7 @@ struct Data {
 
   constexpr bool IsNull() const { return std::holds_alternative<Null>(v.v); }
   constexpr bool IsArray() const {
-    return Type::StructArray <= v.GetType() && v.GetType() <= Type::StringArray;
+    return Type::StructArray <= v.GetType() && v.GetType() <= Type::ByteArray;
   }
 
   template <typename Callable>
@@ -253,6 +271,8 @@ struct Data {
     if (auto* x = std::get_if<std::unique_ptr<std::vector<float>>>(&v.v))
       return fn(*x->get());
     if (auto* x = std::get_if<std::unique_ptr<std::vector<std::string>>>(&v.v))
+      return fn(*x->get());
+    if (auto* x = std::get_if<std::unique_ptr<std::vector<std::vector<u8>>>>(&v.v))
       return fn(*x->get());
     throw std::logic_error("Not an array");
   }

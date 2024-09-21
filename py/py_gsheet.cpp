@@ -65,7 +65,8 @@ void BindGsheet(py::module& parent) {
       .value("Int", gsheet::Field::Type::Int, "Signed 32-bit integer.")
       .value("Float", gsheet::Field::Type::Float,
              "Single-precision floating point number (binary32)..")
-      .value("String", gsheet::Field::Type::String, "Null-terminated string.");
+      .value("String", gsheet::Field::Type::String, "Null-terminated string.")
+      .value("Bytes", gsheet::Field::Type::Bytes, "Binary blob");
 
   py::enum_<gsheet::Field::Flag>(Field, "Flag")
       .value("IsNullable", gsheet::Field::Flag::IsNullable)
@@ -105,6 +106,7 @@ void BindGsheet(py::module& parent) {
   m.attr("IntArray") = parent.attr("BufferInt");
   m.attr("FloatArray") = parent.attr("BufferF32");
   m.attr("StringArray") = parent.attr("BufferString");
+  m.attr("ByteArray") = parent.attr("BufferBytes");
 
   auto Sheet = py::class_<gsheet::SheetRw>(m, "Sheet", "Grezzo datasheet.");
 

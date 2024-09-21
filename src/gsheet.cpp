@@ -172,6 +172,11 @@ private:
             throw std::invalid_argument("Mismatched field type and data type (expected String)");
           writer.WriteCStr(v);
         },
+        [&](const std::vector<u8>& v) {
+          if (field.type != Field::Type::Bytes)
+            throw std::invalid_argument("Mismatched field type and data type (expected Bytes)");
+          writer.WriteBytes(v);
+        },
         [](const auto&) { throw std::logic_error("Unexpected type"); });
   }
 
@@ -181,6 +186,15 @@ private:
     else
       writer.Write<u64>(0);
     writer.Write(u32(string.size()));
+    writer.Write<u32>(0);
+  }
+
+  void WriteBytesPtr(const std::vector<u8>& bytes, const Field& field) {
+    if (!bytes.empty() || !field.flags[Field::Flag::IsNullable])
+      RegisterAndWriteObjectPtr(bytes, "bytes");
+    else
+      writer.Write<u64>(0);
+    writer.Write<u32>(bytes.size());
     writer.Write<u32>(0);
   }
 
@@ -198,6 +212,9 @@ private:
       // Strings (including Nullables that are strings).
       else if (field.type == Field::Type::String) {
         WriteStringPtr(data.v.Get<Data::Type::String>(), field);
+      }
+      else if (field.type == Field::Type::Bytes) {
+        WriteBytesPtr(data.v.Get<Data::Type::Bytes>(), field);
       }
       // Nullables that are not strings.
       else if (field.flags[Field::Flag::IsNullable]) {
@@ -243,6 +260,20 @@ private:
           RegisterObject(data);
           for (const auto& string : strings)
             WriteStringPtr(string, field);
+          break;
+        }
+        case Field::Type::Bytes: {
+          const auto& byte_array = data.v.Get<Data::Type::ByteArray>();
+          for (const auto& bytes : byte_array) {
+            RegisterObject(bytes);
+            writer.WriteBytes(bytes);
+          }
+
+          writer.AlignUp(8);
+          RegisterObject(data);
+          for (const auto& bytes : byte_array) {
+            WriteBytesPtr(bytes, field);
+          }
           break;
         }
         default: {
@@ -408,6 +439,17 @@ void RelocateFieldData(void* data, const ResField& field, tcb::span<u8> buffer,
     }
   }
 
+  else if (field.type == Field::Type::Bytes) {
+    auto* bytes = static_cast<Bytes*>(data);
+
+    if ((bytes->size || !field.flags[Field::Flag::IsNullable]) && !bytes->data)
+      throw InvalidDataError("Missing binary data");
+    
+    if (bytes->data) {
+      util::Relocate(buffer, bytes->data, bytes->size);
+    }
+  }
+
   else if (field.flags[Field::Flag::IsNullable] && !ignore_nullable_flag) {
     auto* nullable = static_cast<Nullable<void>*>(data);
     if (nullable->data) {
@@ -432,8 +474,8 @@ Sheet::Sheet(tcb::span<u8> data) : m_data{data} {
   ResHeader& header = GetHeader();
   if (header.magic != util::MakeMagic("gsht"))
     throw InvalidDataError("Invalid magic");
-  if (header.version != 1)
-    throw InvalidDataError("Invalid version (expected 1)");
+  if (header.version != 1 && header.version != 2)
+    throw InvalidDataError("Invalid version (expected 1 or 2)");
   if (header.bool_size != 1)
     throw InvalidDataError("Invalid bool size");
   if (header.pointer_size != 8)
@@ -559,6 +601,9 @@ Data::Data(const void* data, const Field& field, bool ignore_array_flag,
     case Field::Type::String:
       v = ParseValueArray<std::string, true>(array, field, ignore_nullable_flag);
       break;
+    case Field::Type::Bytes:
+      v = ParseValueArray<std::vector<u8>, true>(array, field, ignore_nullable_flag);
+      break;
     default:
       throw InvalidDataError("Unexpected field type");
     }
@@ -567,6 +612,15 @@ Data::Data(const void* data, const Field& field, bool ignore_array_flag,
   else if (field.type == Field::Type::String) {
     auto* string = static_cast<const String*>(data);
     v = string->data ? std::string(string->data) : "";
+  }
+
+  else if (field.type == Field::Type::Bytes) {
+    auto* bytes = static_cast<const Bytes*>(data);
+    std::vector<u8> value{};
+    if (bytes->data) {
+      value.assign(bytes->data, bytes->data + bytes->size);
+    }
+    v = std::move(value);
   }
 
   else if (field.flags[Field::Flag::IsNullable] && !ignore_nullable_flag) {

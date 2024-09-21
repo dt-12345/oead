@@ -85,6 +85,8 @@ void BindCommonTypes(py::module& m) {
   BindVector<std::vector<bool>>(m, "BufferBool", "Mutable list-like object that stores booleans.");
   BindVector<std::vector<std::string>>(m, "BufferString",
                                        "Mutable list-like object that stores strings.");
+  BindVector<std::vector<std::vector<u8>>>(m, "BufferBytes",
+                                           "Mutable list-like object that stores bytes");
 
   detail::BindNumber<U8, py::int_>(m, "U8");
   detail::BindNumber<U16, py::int_>(m, "U16");
