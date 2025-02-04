@@ -383,7 +383,7 @@ struct WriteContext {
       writer.WriteBytes(data.GetBinary());
       return;
     case Byml::Type::BinaryWithAlignment:
-      writer.Seek(util::AlignUp(data.GetBinaryWithAlignment().align, writer.Tell() + 8) - 8);
+      writer.Seek(util::AlignUp(writer.Tell() + 8, data.GetBinaryWithAlignment().align) - 8);
       writer.Write(static_cast<u32>(data.GetBinaryWithAlignment().data.size()));
       writer.Write(data.GetBinaryWithAlignment().align);
       writer.WriteBytes(data.GetBinaryWithAlignment().data);
