@@ -494,7 +494,7 @@ struct WriteContext {
         const size_t offset =
             type != Byml::Type::BinaryWithAlignment ?
                 writer.Tell() :
-                util::AlignUp(node.data->GetBinaryWithAlignment().align, writer.Tell() + 8) - 8;
+                util::AlignUp(writer.Tell() + 8, node.data->GetBinaryWithAlignment().align) - 8;
         writer.RunAt(node.offset_in_container, [&](size_t) { writer.Write<u32>(offset); });
         non_inline_node_data.emplace(*node.data, offset);
         if (IsContainerType(type))
