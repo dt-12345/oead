@@ -138,7 +138,7 @@ public:
 
   template <Type Type, typename T>
   Reference<const T> Get(std::string_view key, T default_) const {
-    if (GetType() == Type::Dictionary) {
+    if (GetType() == Byml::Type::Dictionary) {
       auto it = GetDictionary().find(key);
       if (it == GetDictionary().end())
         return default_;
@@ -152,7 +152,7 @@ public:
   }
   template <Type Type, typename T>
   Reference<T> Get(std::string_view key, T default_) {
-    if (GetType() == Type::Dictionary) {
+    if (GetType() == Byml::Type::Dictionary) {
       auto it = GetDictionary().find(key);
       if (it == GetDictionary().end())
         return default_;
@@ -166,7 +166,7 @@ public:
   }
   template <Type Type, typename T>
   Reference<const T> Get(u32 key, T default_) const {
-    if (GetType() == Type::Hash32) {
+    if (GetType() == Byml::Type::Hash32) {
       auto it = GetHash32().find(key);
       if (it == GetHash32().end())
         return default_;
@@ -180,7 +180,7 @@ public:
   }
   template <Type Type, typename T>
   Reference<T> Get(u32 key, T default_) {
-    if (GetType() == Type::Hash32) {
+    if (GetType() == Byml::Type::Hash32) {
       auto it = GetHash32().find(key);
       if (it == GetHash32().end())
         return default_;
@@ -194,7 +194,7 @@ public:
   }
   template <Type Type, typename T>
   Reference<const T> Get(u64 key, T default_) const {
-    if (GetType() == Type::Hash64) {
+    if (GetType() == Byml::Type::Hash64) {
       auto it = GetHash64().find(key);
       if (it == GetHash64().end())
         return default_;
@@ -208,7 +208,7 @@ public:
   }
   template <Type Type, typename T>
   Reference<T> Get(u64 key, T default_) {
-    if (GetType() == Type::Hash64) {
+    if (GetType() == Byml::Type::Hash64) {
       auto it = GetHash64().find(key);
       if (it == GetHash64().end())
         return default_;
