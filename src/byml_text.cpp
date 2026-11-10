@@ -80,7 +80,8 @@ static Byml ScalarToValue(std::string_view tag, yml::Scalar&& scalar) {
 static bool ShouldUseInlineYamlStyle(const Byml& container) {
   const auto is_simple = [](const Byml& item) {
     return !util::IsAnyOf(item.GetType(), Byml::Type::Array, Byml::Type::Dictionary,
-                          Byml::Type::Hash32, Byml::Type::Hash64);
+                          Byml::Type::OrderedDictionary, Byml::Type::Hash32, Byml::Type::Hash64,
+                          Byml::Type::OrderedHash32, Byml::Type::OrderedHash64);
   };
   switch (container.GetType()) {
   case Byml::Type::Array:
@@ -89,6 +90,10 @@ static bool ShouldUseInlineYamlStyle(const Byml& container) {
     return container.GetDictionary().size() <= 10 &&
            absl::c_all_of(container.GetDictionary(),
                           [&](const auto& p) { return is_simple(p.second); });
+  case Byml::Type::OrderedDictionary:
+    return container.GetOrderedDictionary().size() <= 10 &&
+           absl::c_all_of(container.GetOrderedDictionary(),
+                          [&](const auto& p) { return is_simple(p.second); });
   case Byml::Type::Hash32:
     return container.GetHash32().size() <= 10 &&
            absl::c_all_of(container.GetHash32(),
@@ -96,6 +101,14 @@ static bool ShouldUseInlineYamlStyle(const Byml& container) {
   case Byml::Type::Hash64:
     return container.GetHash64().size() <= 10 &&
            absl::c_all_of(container.GetHash64(),
+                          [&](const auto& p) { return is_simple(p.second); });
+  case Byml::Type::OrderedHash32:
+    return container.GetOrderedHash32().size() <= 10 &&
+           absl::c_all_of(container.GetOrderedHash32(),
+                          [&](const auto& p) { return is_simple(p.second); });
+  case Byml::Type::OrderedHash64:
+    return container.GetOrderedHash64().size() <= 10 &&
+           absl::c_all_of(container.GetOrderedHash64(),
                           [&](const auto& p) { return is_simple(p.second); });
   default:
     return false;
@@ -124,6 +137,14 @@ Byml ParseYamlNode(ryml::ConstNodeRef node) {
         dict.emplace(std::move(key), std::move(value));
       }
       return Byml{std::move(dict)};
+    } else if (yml::RymlGetValTag(node) == "!ordered_dict") {
+      auto dict = Byml::OrderedDictionary{};
+      for (const auto& child : node) {
+        std::string key{yml::RymlSubstrToStrView(child.key())};
+        Byml value = ParseYamlNode(child);
+        dict.emplace(std::move(key), std::move(value));
+      }
+      return Byml{std::move(dict)};
     } else if (yml::RymlGetValTag(node) == "!h32") {
       auto hash = Byml::Hash32{};
       for (const auto& child : node) {
@@ -143,6 +164,30 @@ Byml ParseYamlNode(ryml::ConstNodeRef node) {
         const auto [_, ec] = std::from_chars(child.key().begin(), child.key().end(), key, 16);
         if (ec != std::error_code()) {
           throw InvalidDataError("Failed to parse !h64 key");
+        }
+        Byml value = ParseYamlNode(child);
+        hash.emplace(key, std::move(value));
+      }
+      return Byml{std::move(hash)};
+    } else if (yml::RymlGetValTag(node) == "!ordered_h32") {
+      auto hash = Byml::OrderedHash32{};
+      for (const auto& child : node) {
+        u32 key;
+        const auto [_, ec] = std::from_chars(child.key().begin(), child.key().end(), key, 16);
+        if (ec != std::error_code()) {
+          throw InvalidDataError("Failed to parse !ordered_h32 key");
+        }
+        Byml value = ParseYamlNode(child);
+        hash.emplace(key, std::move(value));
+      }
+      return Byml{std::move(hash)};
+    } else if (yml::RymlGetValTag(node) == "!ordered_h64") {
+      auto hash = Byml::OrderedHash64{};
+      for (const auto& child : node) {
+        u64 key;
+        const auto [_, ec] = std::from_chars(child.key().begin(), child.key().end(), key, 16);
+        if (ec != std::error_code()) {
+          throw InvalidDataError("Failed to parse !ordered_h64 key");
         }
         Byml value = ParseYamlNode(child);
         hash.emplace(key, std::move(value));
@@ -230,6 +275,16 @@ std::string Byml::ToText() const {
             self(self, v);
           }
         },
+        [&](const OrderedDictionary& v) {
+          const auto style = byml::ShouldUseInlineYamlStyle(v) ? YAML_FLOW_MAPPING_STYLE :
+                                                                 YAML_BLOCK_MAPPING_STYLE;
+          yml::LibyamlEmitter::MappingScope scope{emitter, "!ordered_dict", style};
+
+          for (const auto& [k, v] : v) {
+            emitter.EmitString(k);
+            self(self, v);
+          }
+        },
         [&](const Hash32& v) {
           const auto style = byml::ShouldUseInlineYamlStyle(v) ? YAML_FLOW_MAPPING_STYLE :
                                                                  YAML_BLOCK_MAPPING_STYLE;
@@ -244,6 +299,26 @@ std::string Byml::ToText() const {
           const auto style = byml::ShouldUseInlineYamlStyle(v) ? YAML_FLOW_MAPPING_STYLE :
                                                                  YAML_BLOCK_MAPPING_STYLE;
           yml::LibyamlEmitter::MappingScope scope{emitter, "!h64", style};
+
+          for (const auto& [k, v] : v) {
+            emitter.EmitString(absl::StrFormat("0x%016x", k));
+            self(self, v);
+          }
+        },
+        [&](const OrderedHash32& v) {
+          const auto style = byml::ShouldUseInlineYamlStyle(v) ? YAML_FLOW_MAPPING_STYLE :
+                                                                 YAML_BLOCK_MAPPING_STYLE;
+          yml::LibyamlEmitter::MappingScope scope{emitter, "!ordered_h32", style};
+
+          for (const auto& [k, v] : v) {
+            emitter.EmitString(absl::StrFormat("0x%08x", k));
+            self(self, v);
+          }
+        },
+        [&](const OrderedHash64& v) {
+          const auto style = byml::ShouldUseInlineYamlStyle(v) ? YAML_FLOW_MAPPING_STYLE :
+                                                                 YAML_BLOCK_MAPPING_STYLE;
+          yml::LibyamlEmitter::MappingScope scope{emitter, "!ordered_h64", style};
 
           for (const auto& [k, v] : v) {
             emitter.EmitString(absl::StrFormat("0x%016x", k));

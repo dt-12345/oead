@@ -32,8 +32,11 @@
 
 OEAD_MAKE_OPAQUE("oead.byml.Array", oead::Byml::Array);
 OEAD_MAKE_OPAQUE("oead.byml.Dictionary", oead::Byml::Dictionary);
+OEAD_MAKE_OPAQUE("oead.byml.OrderedDictionary", oead::Byml::OrderedDictionary);
 OEAD_MAKE_OPAQUE("oead.byml.Hash32", oead::Byml::Hash32);
 OEAD_MAKE_OPAQUE("oead.byml.Hash64", oead::Byml::Hash64);
+OEAD_MAKE_OPAQUE("oead.byml.OrderedHash32", oead::Byml::OrderedHash32);
+OEAD_MAKE_OPAQUE("oead.byml.OrderedHash64", oead::Byml::OrderedHash64);
 OEAD_MAKE_VARIANT_CASTER(oead::Byml::Value);
 
 namespace pybind11::detail {
@@ -80,6 +83,11 @@ static auto BorrowByml(Callable&& callable) {
       util::ScopeGuard guard{[&] { ref = std::move(obj.Get<Byml::Type::Dictionary>()); }};
       return invoke(std::move(ref));
     }
+    if (py::isinstance<Byml::OrderedDictionary>(handle)) {
+      auto& ref = handle.cast<Byml::OrderedDictionary&>();
+      util::ScopeGuard guard{[&] { ref = std::move(obj.Get<Byml::Type::OrderedDictionary>()); }};
+      return invoke(std::move(ref));
+    }
     if (py::isinstance<Byml::Hash32>(handle)) {
       auto& ref = handle.cast<Byml::Hash32&>();
       util::ScopeGuard guard{[&] { ref = std::move(obj.Get<Byml::Type::Hash32>()); }};
@@ -88,6 +96,16 @@ static auto BorrowByml(Callable&& callable) {
     if (py::isinstance<Byml::Hash64>(handle)) {
       auto& ref = handle.cast<Byml::Hash64&>();
       util::ScopeGuard guard{[&] { ref = std::move(obj.Get<Byml::Type::Hash64>()); }};
+      return invoke(std::move(ref));
+    }
+    if (py::isinstance<Byml::OrderedHash32>(handle)) {
+      auto& ref = handle.cast<Byml::OrderedHash32&>();
+      util::ScopeGuard guard{[&] { ref = std::move(obj.Get<Byml::Type::OrderedHash32>()); }};
+      return invoke(std::move(ref));
+    }
+    if (py::isinstance<Byml::OrderedHash64>(handle)) {
+      auto& ref = handle.cast<Byml::OrderedHash64&>();
+      util::ScopeGuard guard{[&] { ref = std::move(obj.Get<Byml::Type::OrderedHash64>()); }};
       return invoke(std::move(ref));
     }
     return invoke(handle.cast<Byml>());
@@ -126,7 +144,10 @@ void BindByml(py::module& parent) {
 
   BindVector<Byml::Array>(m, "Array");
   BindMap<Byml::Dictionary>(m, "Dictionary");
+  BindMap<Byml::OrderedDictionary>(m, "OrderedDictionary");
   BindMap<Byml::Hash32>(m, "Hash32");
   BindMap<Byml::Hash64>(m, "Hash64");
+  BindMap<Byml::OrderedHash32>(m, "OrderedHash32");
+  BindMap<Byml::OrderedHash64>(m, "OrderedHash64");
 }
 }  // namespace oead::bind

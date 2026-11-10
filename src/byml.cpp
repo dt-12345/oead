@@ -31,6 +31,7 @@
 #include <oead/util/bit_utils.h>
 #include <oead/util/iterator_utils.h>
 #include <oead/util/variant_utils.h>
+#include "oead/errors.h"
 
 namespace oead {
 
@@ -80,17 +81,37 @@ enum class NodeType : u8 {
 
 constexpr NodeType GetNodeType(Byml::Type type) {
   constexpr std::array map{
-      NodeType::Null,   NodeType::Hash32,        NodeType::Hash64, NodeType::String,
-      NodeType::Binary, NodeType::AlignedBinary, NodeType::Array,  NodeType::Dictionary,
-      NodeType::Bool,   NodeType::Int,           NodeType::Float,  NodeType::UInt,
-      NodeType::Int64,  NodeType::UInt64,        NodeType::Double,
+      NodeType::Null,
+      NodeType::Hash32,
+      NodeType::Hash64,
+      NodeType::OrderedHash32,
+      NodeType::OrderedHash64,
+      NodeType::String,
+      NodeType::Binary,
+      NodeType::AlignedBinary,
+      NodeType::Array,
+      NodeType::Dictionary,
+      NodeType::OrderedDictionary,
+      NodeType::Bool,
+      NodeType::Int,
+      NodeType::Float,
+      NodeType::UInt,
+      NodeType::Int64,
+      NodeType::UInt64,
+      NodeType::Double,
   };
   return map[u8(type)];
 }
 
 template <typename T = NodeType>
+constexpr bool IsOrderedContainerType(T type) {
+  return type == T::OrderedHash32 || type == T::OrderedHash64 || type == T::OrderedDictionary;
+}
+
+template <typename T = NodeType>
 constexpr bool IsContainerType(T type) {
-  return type == T::Array || type == T::Dictionary || type == T::Hash32 || type == T::Hash64;
+  return type == T::Array || type == T::Dictionary || type == T::Hash32 || type == T::Hash64 ||
+         IsOrderedContainerType(type);
 }
 
 template <typename T = NodeType>
@@ -249,17 +270,65 @@ private:
     return ParseValueNode(offset, type);
   }
 
-  template <typename T>
+  std::vector<u32> ParseIndexOrder(u32 offset, u32 count) {
+    const size_t index_size = count < 0x100  ? sizeof(u8) :
+                              count < 0x1000 ? sizeof(u16) :
+                                               sizeof(u32);
+    std::vector<u32> sorted_indices(count);
+    std::iota(sorted_indices.begin(), sorted_indices.end(), 0);
+
+    m_reader.Seek(offset);
+    std::vector<u32> orig_indices(count);
+    for (u32 i = 0; i < count; ++i) {
+      switch (index_size) {
+      case sizeof(u8):
+        orig_indices[i] = m_reader.Read<u8>().value();
+        break;
+      case sizeof(u16):
+        orig_indices[i] = m_reader.Read<u16>().value();
+        break;
+      case sizeof(u32):
+        orig_indices[i] = m_reader.Read<u32>().value();
+        break;
+      }
+
+      if (orig_indices[i] >= count)
+        throw InvalidDataError("Invalid index remapping");
+    }
+
+    std::sort(sorted_indices.begin(), sorted_indices.end(),
+              [&](u32 lhs, u32 rhs) { return orig_indices.at(lhs) < orig_indices.at(rhs); });
+
+    return sorted_indices;
+  }
+
+  template <typename T, bool Ordered>
   Byml ParseHashNode(u32 offset, u32 size) {
     using KeyType = T::key_type;
     T result;
     constexpr size_t entry_size = sizeof(KeyType) + 4;
     const u32 types_offset = offset + 4 + entry_size * size;
-    for (u32 i = 0; i < size; ++i) {
-      const auto type = m_reader.Read<NodeType>(types_offset + i);
-      const auto key = m_reader.Read<KeyType>(offset + 4 + entry_size * i);
-      result.emplace(key.value(),
-                     ParseContainerChildNode(offset + 4 + entry_size * i + 4, type.value()));
+    if constexpr (Ordered) {
+      const u32 index_offset = util::AlignUp(types_offset + sizeof(NodeType) * size, 4);
+      const std::vector<u32> indices = ParseIndexOrder(index_offset, size);
+      result.reserve(size);
+      for (u32 i = 0; i < size; ++i) {
+        const u32 index = indices.at(i);
+        if (index >= size) { // Should not be possible
+          throw InvalidDataError("Invalid index remapping");
+        }
+        const auto type = m_reader.Read<NodeType>(types_offset + index);
+        const auto key = m_reader.Read<KeyType>(offset + 4 + entry_size * index);
+        result.emplace(key.value(),
+                       ParseContainerChildNode(offset + 4 + entry_size * index + 4, type.value()));
+      }
+    } else {
+      for (u32 i = 0; i < size; ++i) {
+        const auto type = m_reader.Read<NodeType>(types_offset + i);
+        const auto key = m_reader.Read<KeyType>(offset + 4 + entry_size * i);
+        result.emplace(key.value(),
+                       ParseContainerChildNode(offset + 4 + entry_size * i + 4, type.value()));
+      }
     }
     return Byml{std::move(result)};
   }
@@ -275,14 +344,33 @@ private:
     return Byml{std::move(result)};
   }
 
+  template <bool Ordered>
   Byml ParseDictionaryNode(u32 offset, u32 size) {
-    Byml::Dictionary result;
-    for (u32 i = 0; i < size; ++i) {
-      const u32 entry_offset = offset + 4 + 8 * i;
-      const auto name_idx = m_reader.ReadU24(entry_offset);
-      const auto type = m_reader.Read<NodeType>(entry_offset + 3);
-      result.emplace(m_hash_key_table.GetString(m_reader, name_idx.value()),
-                     ParseContainerChildNode(entry_offset + 4, type.value()));
+    using ResultType = std::conditional_t<Ordered, Byml::OrderedDictionary, Byml::Dictionary>;
+    ResultType result;
+    if constexpr (Ordered) {
+      const auto index_offset = offset + 4 + 8 * size;
+      const std::vector<u32> indices = ParseIndexOrder(index_offset, size);
+      result.reserve(size);
+      for (u32 i = 0; i < size; ++i) {
+        const u32 index = indices.at(i);
+        if (index >= size) { // Should not be possible
+          throw InvalidDataError("Invalid index remapping");
+        }
+        const u32 entry_offset = offset + 4 + 8 * index;
+        const auto name_idx = m_reader.ReadU24(entry_offset);
+        const auto type = m_reader.Read<NodeType>(entry_offset + 3);
+        result.emplace(m_hash_key_table.GetString(m_reader, name_idx.value()),
+                       ParseContainerChildNode(entry_offset + 4, type.value()));
+      }
+    } else {
+      for (u32 i = 0; i < size; ++i) {
+        const u32 entry_offset = offset + 4 + 8 * i;
+        const auto name_idx = m_reader.ReadU24(entry_offset);
+        const auto type = m_reader.Read<NodeType>(entry_offset + 3);
+        result.emplace(m_hash_key_table.GetString(m_reader, name_idx.value()),
+                       ParseContainerChildNode(entry_offset + 4, type.value()));
+      }
     }
     return Byml{std::move(result)};
   }
@@ -295,13 +383,19 @@ private:
 
     switch (*type) {
     case NodeType::Hash32:
-      return ParseHashNode<Byml::Hash32>(offset, *num_entries);
+      return ParseHashNode<Byml::Hash32, false>(offset, *num_entries);
     case NodeType::Hash64:
-      return ParseHashNode<Byml::Hash64>(offset, *num_entries);
+      return ParseHashNode<Byml::Hash64, false>(offset, *num_entries);
+    case NodeType::OrderedHash32:
+      return ParseHashNode<Byml::OrderedHash32, true>(offset, *num_entries);
+    case NodeType::OrderedHash64:
+      return ParseHashNode<Byml::OrderedHash64, true>(offset, *num_entries);
     case NodeType::Array:
       return ParseArrayNode(offset, *num_entries);
     case NodeType::Dictionary:
-      return ParseDictionaryNode(offset, *num_entries);
+      return ParseDictionaryNode<false>(offset, *num_entries);
+    case NodeType::OrderedDictionary:
+      return ParseDictionaryNode<true>(offset, *num_entries);
     default:
       throw InvalidDataError("Invalid container node: must be array, dictionary, or hash");
     }
@@ -359,6 +453,12 @@ struct WriteContext {
           self(self, value);
         }
         break;
+      case Byml::Type::OrderedDictionary:
+        for (const auto& [key, value] : data.GetOrderedDictionary()) {
+          hash_key_table.Add(key);
+          self(self, value);
+        }
+        break;
       case Byml::Type::Hash32:
         for (const auto& [key, value] : data.GetHash32()) {
           self(self, value);
@@ -366,6 +466,16 @@ struct WriteContext {
         break;
       case Byml::Type::Hash64:
         for (const auto& [key, value] : data.GetHash64()) {
+          self(self, value);
+        }
+        break;
+      case Byml::Type::OrderedHash32:
+        for (const auto& [key, value] : data.GetOrderedHash32()) {
+          self(self, value);
+        }
+        break;
+      case Byml::Type::OrderedHash64:
+        for (const auto& [key, value] : data.GetOrderedHash64()) {
           self(self, value);
         }
         break;
@@ -462,6 +572,78 @@ struct WriteContext {
       writer.AlignUp(4);
       break;
     }
+    case Byml::Type::OrderedHash32: {
+      const auto& hash = data.GetOrderedHash32();
+      writer.Write(NodeType::OrderedHash32);
+      writer.WriteU24(hash.size());
+      absl::btree_map<u32, std::pair<u32, std::reference_wrapper<const Byml>>> ordered{};
+      for (u32 i = 0; i < hash.size(); ++i) {
+        const auto& [key, value] = hash.values_container()[i];
+        ordered.emplace(key, std::make_pair(i, std::cref(value)));
+      }
+      for (const auto& [key, value] : ordered) {
+        writer.Write(key);
+        write_container_item(value.second);
+      }
+      for (const auto& [key, value] : ordered) {
+        writer.Write(GetNodeType(value.second.get().GetType()));
+      }
+      writer.AlignUp(4);
+      const size_t index_size = hash.size() < 0x100  ? sizeof(u8) :
+                                hash.size() < 0x1000 ? sizeof(u16) :
+                                                       sizeof(u32);
+      for (const auto& [_, value] : ordered) {
+        switch (index_size) {
+        case sizeof(u8):
+          writer.Write(static_cast<u8>(value.first));
+          break;
+        case sizeof(u16):
+          writer.Write(static_cast<u16>(value.first));
+          break;
+        case sizeof(u32):
+          writer.Write(static_cast<u32>(value.first));
+          break;
+        }
+      }
+      writer.AlignUp(4);
+      break;
+    }
+    case Byml::Type::OrderedHash64: {
+      const auto& hash = data.GetOrderedHash64();
+      writer.Write(NodeType::OrderedHash64);
+      writer.WriteU24(hash.size());
+      absl::btree_map<u64, std::pair<u32, std::reference_wrapper<const Byml>>> ordered{};
+      for (u32 i = 0; i < hash.size(); ++i) {
+        const auto& [key, value] = hash.values_container()[i];
+        ordered.emplace(key, std::make_pair(i, std::cref(value)));
+      }
+      for (const auto& [key, value] : ordered) {
+        writer.Write(key);
+        write_container_item(value.second);
+      }
+      for (const auto& [key, value] : ordered) {
+        writer.Write(GetNodeType(value.second.get().GetType()));
+      }
+      writer.AlignUp(4);
+      const size_t index_size = hash.size() < 0x100  ? sizeof(u8) :
+                                hash.size() < 0x1000 ? sizeof(u16) :
+                                                       sizeof(u32);
+      for (const auto& [_, value] : ordered) {
+        switch (index_size) {
+        case sizeof(u8):
+          writer.Write(static_cast<u8>(value.first));
+          break;
+        case sizeof(u16):
+          writer.Write(static_cast<u16>(value.first));
+          break;
+        case sizeof(u32):
+          writer.Write(static_cast<u32>(value.first));
+          break;
+        }
+      }
+      writer.AlignUp(4);
+      break;
+    }
     case Byml::Type::Array: {
       const auto& array = data.GetArray();
       writer.Write(NodeType::Array);
@@ -483,6 +665,41 @@ struct WriteContext {
         writer.Write(type);
         write_container_item(value);
       }
+      break;
+    }
+    case Byml::Type::OrderedDictionary: {
+      const auto& hash = data.GetOrderedDictionary();
+      writer.Write(NodeType::OrderedDictionary);
+      writer.WriteU24(hash.size());
+      absl::btree_map<std::string_view, std::pair<u32, std::reference_wrapper<const Byml>>>
+          ordered{};
+      for (u32 i = 0; i < hash.size(); ++i) {
+        const auto& [key, value] = hash.values_container()[i];
+        ordered.emplace(key, std::make_pair(i, std::cref(value)));
+      }
+      for (const auto& [key, value] : ordered) {
+        const auto type = GetNodeType(value.second.get().GetType());
+        writer.WriteU24(hash_key_table.GetIndex(key));
+        writer.Write(type);
+        write_container_item(value.second);
+      }
+      const size_t index_size = hash.size() < 0x100  ? sizeof(u8) :
+                                hash.size() < 0x1000 ? sizeof(u16) :
+                                                       sizeof(u32);
+      for (const auto& [_, value] : ordered) {
+        switch (index_size) {
+        case sizeof(u8):
+          writer.Write(static_cast<u8>(value.first));
+          break;
+        case sizeof(u16):
+          writer.Write(static_cast<u16>(value.first));
+          break;
+        case sizeof(u32):
+          writer.Write(static_cast<u32>(value.first));
+          break;
+        }
+      }
+      writer.AlignUp(4);
       break;
     }
     default:
@@ -619,8 +836,20 @@ Byml::Hash64& Byml::GetHash64() {
   return Get<Type::Hash64>();
 }
 
+Byml::OrderedHash32& Byml::GetOrderedHash32() {
+  return Get<Type::OrderedHash32>();
+}
+
+Byml::OrderedHash64& Byml::GetOrderedHash64() {
+  return Get<Type::OrderedHash64>();
+}
+
 Byml::Dictionary& Byml::GetDictionary() {
   return Get<Type::Dictionary>();
+}
+
+Byml::OrderedDictionary& Byml::GetOrderedDictionary() {
+  return Get<Type::OrderedDictionary>();
 }
 
 Byml::Array& Byml::GetArray() {
@@ -647,8 +876,20 @@ const Byml::Hash64& Byml::GetHash64() const {
   return Get<Type::Hash64>();
 }
 
+const Byml::OrderedHash32& Byml::GetOrderedHash32() const {
+  return Get<Type::OrderedHash32>();
+}
+
+const Byml::OrderedHash64& Byml::GetOrderedHash64() const {
+  return Get<Type::OrderedHash64>();
+}
+
 const Byml::Dictionary& Byml::GetDictionary() const {
   return Get<Type::Dictionary>();
+}
+
+const Byml::OrderedDictionary& Byml::GetOrderedDictionary() const {
+  return Get<Type::OrderedDictionary>();
 }
 
 const Byml::Array& Byml::GetArray() const {

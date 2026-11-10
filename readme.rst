@@ -16,7 +16,7 @@ Currently, oead only handles very common formats that are extensively used in re
 * `BARS` (binary audio resource): Version 1.1 is supported
 * `BYML <https://zeldamods.org/wiki/BYML>`_ (binary YAML): Versions 1-10 are supported.
 
-  * The following features of v7+ BYMLs are not yet supported: ordered containers (Hash32, Hash64, Dictionary) and mono-typed arrays
+  * The following features of v7+ BYMLs are not yet supported: mono-typed arrays
 
 * `FSTM` (cafe stream): Version 4.0.0 is supported
 * `FSTP` (cafe stream prefetch): Version 2.1.0 is supported

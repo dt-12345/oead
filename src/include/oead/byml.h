@@ -27,13 +27,16 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <tsl/ordered_map.h>
 #include <variant>
 #include <vector>
 
 #include <oead/errors.h>
 #include <oead/types.h>
+#include <oead/util/string_utils.h>
 #include <oead/util/type_utils.h>
 #include <oead/util/variant_utils.h>
+
 
 namespace oead {
 
@@ -44,11 +47,14 @@ public:
     Null = 0,
     Hash32,
     Hash64,
+    OrderedHash32,
+    OrderedHash64,
     String,
     Binary,
     AlignedBinary,
     Array,
     Dictionary,
+    OrderedDictionary,
     Bool,
     Int,
     Float,
@@ -61,9 +67,19 @@ public:
   using Null = std::nullptr_t;
   using Hash32 = absl::btree_map<u32, Byml>;
   using Hash64 = absl::btree_map<u64, Byml>;
+  using OrderedHash32 =
+      tsl::ordered_map<u32, Byml, absl::Hash<u32>, std::equal_to<u32>,
+                       std::allocator<std::pair<u32, Byml>>, std::vector<std::pair<u32, Byml>>>;
+  using OrderedHash64 =
+      tsl::ordered_map<u64, Byml, absl::Hash<u64>, std::equal_to<u64>,
+                       std::allocator<std::pair<u64, Byml>>, std::vector<std::pair<u64, Byml>>>;
   using String = std::string;
   using Array = std::vector<Byml>;
   using Dictionary = absl::btree_map<std::string, Byml>;
+  using OrderedDictionary =
+      tsl::ordered_map<std::string, Byml, absl::Hash<std::string>, util::StrEqual,
+                       std::allocator<std::pair<std::string, Byml>>,
+                       std::vector<std::pair<std::string, Byml>>>;
 
   struct AlignedBinary {
     std::vector<u8> data;
@@ -72,10 +88,11 @@ public:
     OEAD_DEFINE_FIELDS(AlignedBinary, data, align);
   };
 
-  using Value = util::Variant<Type, Null, std::unique_ptr<Hash32>, std::unique_ptr<Hash64>,
-                              std::unique_ptr<String>, std::unique_ptr<std::vector<u8>>,
-                              std::unique_ptr<AlignedBinary>, std::unique_ptr<Array>,
-                              std::unique_ptr<Dictionary>, bool, S32, F32, U32, S64, U64, F64>;
+  using Value = util::Variant<
+      Type, Null, std::unique_ptr<Hash32>, std::unique_ptr<Hash64>, std::unique_ptr<OrderedHash32>,
+      std::unique_ptr<OrderedHash64>, std::unique_ptr<String>, std::unique_ptr<std::vector<u8>>,
+      std::unique_ptr<AlignedBinary>, std::unique_ptr<Array>, std::unique_ptr<Dictionary>,
+      std::unique_ptr<OrderedDictionary>, bool, S32, F32, U32, S64, U64, F64>;
 
   Byml() = default;
   Byml(const Byml& other) { *this = other; }
@@ -121,45 +138,87 @@ public:
 
   template <Type Type, typename T>
   Reference<const T> Get(std::string_view key, T default_) const {
-    auto it = GetDictionary().find(key);
-    if (it == GetDictionary().end())
-      return default_;
-    return std::cref(it->second.Get<Type>());
+    if (GetType() == Type::Dictionary) {
+      auto it = GetDictionary().find(key);
+      if (it == GetDictionary().end())
+        return default_;
+      return std::cref(it->second.Get<Type>());
+    } else {
+      auto it = GetOrderedDictionary().find(key);
+      if (it == GetOrderedDictionary().end())
+        return default_;
+      return std::cref(it->second.Get<Type>());
+    }
   }
   template <Type Type, typename T>
   Reference<T> Get(std::string_view key, T default_) {
-    auto it = GetDictionary().find(key);
-    if (it == GetDictionary().end())
-      return default_;
-    return std::ref(it->second.Get<Type>());
+    if (GetType() == Type::Dictionary) {
+      auto it = GetDictionary().find(key);
+      if (it == GetDictionary().end())
+        return default_;
+      return std::ref(it->second.Get<Type>());
+    } else {
+      auto it = GetOrderedDictionary().find(key);
+      if (it == GetOrderedDictionary().end())
+        return default_;
+      return std::ref(it->second.Get<Type>());
+    }
   }
   template <Type Type, typename T>
   Reference<const T> Get(u32 key, T default_) const {
-    auto it = GetHash32().find(key);
-    if (it == GetHash32().end())
-      return default_;
-    return std::cref(it->second.Get<Type>());
+    if (GetType() == Type::Hash32) {
+      auto it = GetHash32().find(key);
+      if (it == GetHash32().end())
+        return default_;
+      return std::cref(it->second.Get<Type>());
+    } else {
+      auto it = GetOrderedHash32().find(key);
+      if (it == GetOrderedHash32().end())
+        return default_;
+      return std::cref(it->second.Get<Type>());
+    }
   }
   template <Type Type, typename T>
   Reference<T> Get(u32 key, T default_) {
-    auto it = GetHash32().find(key);
-    if (it == GetHash32().end())
-      return default_;
-    return std::ref(it->second.Get<Type>());
+    if (GetType() == Type::Hash32) {
+      auto it = GetHash32().find(key);
+      if (it == GetHash32().end())
+        return default_;
+      return std::ref(it->second.Get<Type>());
+    } else {
+      auto it = GetOrderedHash32().find(key);
+      if (it == GetOrderedHash32().end())
+        return default_;
+      return std::ref(it->second.Get<Type>());
+    }
   }
   template <Type Type, typename T>
   Reference<const T> Get(u64 key, T default_) const {
-    auto it = GetHash64().find(key);
-    if (it == GetHash64().end())
-      return default_;
-    return std::cref(it->second.Get<Type>());
+    if (GetType() == Type::Hash64) {
+      auto it = GetHash64().find(key);
+      if (it == GetHash64().end())
+        return default_;
+      return std::cref(it->second.Get<Type>());
+    } else {
+      auto it = GetOrderedHash64().find(key);
+      if (it == GetOrderedHash64().end())
+        return default_;
+      return std::cref(it->second.Get<Type>());
+    }
   }
   template <Type Type, typename T>
   Reference<T> Get(u64 key, T default_) {
-    auto it = GetHash64().find(key);
-    if (it == GetHash64().end())
-      return default_;
-    return std::ref(it->second.Get<Type>());
+    if (GetType() == Type::Hash64) {
+      auto it = GetHash64().find(key);
+      if (it == GetHash64().end())
+        return default_;
+      return std::ref(it->second.Get<Type>());
+    } else {
+      auto it = GetOrderedHash64().find(key);
+      if (it == GetOrderedHash64().end())
+        return default_;
+      return std::ref(it->second.Get<Type>());
+    }
   }
 
   /// Load a document from binary data.
@@ -180,14 +239,20 @@ public:
 
   Hash32& GetHash32();
   Hash64& GetHash64();
+  OrderedHash32& GetOrderedHash32();
+  OrderedHash64& GetOrderedHash64();
   Dictionary& GetDictionary();
+  OrderedDictionary& GetOrderedDictionary();
   Array& GetArray();
   String& GetString();
   std::vector<u8>& GetBinary();
   AlignedBinary& GetAlignedBinary();
   const Hash32& GetHash32() const;
   const Hash64& GetHash64() const;
+  const OrderedHash32& GetOrderedHash32() const;
+  const OrderedHash64& GetOrderedHash64() const;
   const Dictionary& GetDictionary() const;
+  const OrderedDictionary& GetOrderedDictionary() const;
   const Array& GetArray() const;
   const String& GetString() const;
   const std::vector<u8>& GetBinary() const;
