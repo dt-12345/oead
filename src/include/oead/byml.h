@@ -37,7 +37,6 @@
 #include <oead/util/type_utils.h>
 #include <oead/util/variant_utils.h>
 
-
 namespace oead {
 
 /// BYML value class. This represents a generic value (array, dict, bool, float, u32, etc.)

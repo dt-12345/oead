@@ -314,7 +314,7 @@ private:
       result.reserve(size);
       for (u32 i = 0; i < size; ++i) {
         const u32 index = indices.at(i);
-        if (index >= size) { // Should not be possible
+        if (index >= size) {  // Should not be possible
           throw InvalidDataError("Invalid index remapping");
         }
         const auto type = m_reader.Read<NodeType>(types_offset + index);
@@ -354,7 +354,7 @@ private:
       result.reserve(size);
       for (u32 i = 0; i < size; ++i) {
         const u32 index = indices.at(i);
-        if (index >= size) { // Should not be possible
+        if (index >= size) {  // Should not be possible
           throw InvalidDataError("Invalid index remapping");
         }
         const u32 entry_offset = offset + 4 + 8 * index;
