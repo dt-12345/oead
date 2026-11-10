@@ -4,14 +4,40 @@ import oead
 import typing
 import typing_extensions
 _T = typing.TypeVar("_T")
-__all__: list[str] = ['Array', 'Hash', 'from_binary', 'from_text', 'get_bool', 'get_double', 'get_float', 'get_int', 'get_int64', 'get_string', 'get_uint', 'get_uint64', 'to_binary', 'to_text']
+__all__: list[str] = ['AlignedBinary', 'Array', 'Dictionary', 'Hash32', 'Hash64', 'from_binary', 'from_text', 'get_bool', 'get_double', 'get_float', 'get_int', 'get_int64', 'get_string', 'get_uint', 'get_uint64', 'to_binary', 'to_text']
+class AlignedBinary:
+    __hash__: typing.ClassVar[None] = None
+    @property
+    def data(self) -> oead.Bytes:
+        ...
+    @data.setter
+    def data(self, value: oead.Bytes | bytes) -> None:
+        ...
+    def __copy__(self) -> AlignedBinary:
+        ...
+    def __deepcopy__(self, arg0: dict) -> AlignedBinary:
+        ...
+    def __eq__(self, arg0: AlignedBinary) -> bool:
+        ...
+    @typing.overload
+    def __init__(self) -> None:
+        ...
+    @typing.overload
+    def __init__(self, arg0: oead.Bytes | bytes, arg1: oead.U32) -> None:
+        ...
+    @property
+    def alignment(self) -> int:
+        ...
+    @alignment.setter
+    def alignment(self, arg0: typing.SupportsInt | typing.SupportsIndex) -> None:
+        ...
 class Array:
     __hash__: typing.ClassVar[None] = None
     def __bool__(self) -> bool:
         """
         Check whether the list is nonempty
         """
-    def __contains__(self, x: None | str | oead.Bytes | bytes | Array | list | Hash | dict | bool | oead.S32 | oead.F32 | oead.U32 | oead.S64 | oead.U64 | oead.F64) -> bool:
+    def __contains__(self, x: None | Hash32 | Hash64 | str | oead.Bytes | bytes | AlignedBinary | Array | list | Dictionary | bool | oead.S32 | oead.F32 | oead.U32 | oead.S64 | oead.U64 | oead.F64) -> bool:
         """
         Return true the container contains ``x``
         """
@@ -37,7 +63,7 @@ class Array:
         Retrieve list elements using a slice object
         """
     @typing.overload
-    def __getitem__(self, arg0: typing.SupportsInt | typing.SupportsIndex) -> None | str | oead.Bytes | Array | Hash | bool | oead.S32 | oead.F32 | oead.U32 | oead.S64 | oead.U64 | oead.F64:
+    def __getitem__(self, arg0: typing.SupportsInt | typing.SupportsIndex) -> None | Hash32 | Hash64 | str | oead.Bytes | AlignedBinary | Array | Dictionary | bool | oead.S32 | oead.F32 | oead.U32 | oead.S64 | oead.U64 | oead.F64:
         ...
     @typing.overload
     def __init__(self) -> None:
@@ -50,7 +76,7 @@ class Array:
     @typing.overload
     def __init__(self, arg0: collections.abc.Iterable) -> None:
         ...
-    def __iter__(self) -> collections.abc.Iterator[None | str | oead.Bytes | Array | Hash | bool | oead.S32 | oead.F32 | oead.U32 | oead.S64 | oead.U64 | oead.F64]:
+    def __iter__(self) -> collections.abc.Iterator[None | Hash32 | Hash64 | str | oead.Bytes | AlignedBinary | Array | Dictionary | bool | oead.S32 | oead.F32 | oead.U32 | oead.S64 | oead.U64 | oead.F64]:
         ...
     def __len__(self) -> int:
         ...
@@ -59,14 +85,14 @@ class Array:
     def __repr__(self) -> str:
         ...
     @typing.overload
-    def __setitem__(self, arg0: typing.SupportsInt | typing.SupportsIndex, arg1: None | str | oead.Bytes | bytes | Array | list | Hash | dict | bool | oead.S32 | oead.F32 | oead.U32 | oead.S64 | oead.U64 | oead.F64) -> None:
+    def __setitem__(self, arg0: typing.SupportsInt | typing.SupportsIndex, arg1: None | Hash32 | Hash64 | str | oead.Bytes | bytes | AlignedBinary | Array | list | Dictionary | bool | oead.S32 | oead.F32 | oead.U32 | oead.S64 | oead.U64 | oead.F64) -> None:
         ...
     @typing.overload
     def __setitem__(self, arg0: slice, arg1: Array | list) -> None:
         """
         Assign list elements using a slice object
         """
-    def append(self, x: None | str | oead.Bytes | bytes | Array | list | Hash | dict | bool | oead.S32 | oead.F32 | oead.U32 | oead.S64 | oead.U64 | oead.F64) -> None:
+    def append(self, x: None | Hash32 | Hash64 | str | oead.Bytes | bytes | AlignedBinary | Array | list | Dictionary | bool | oead.S32 | oead.F32 | oead.U32 | oead.S64 | oead.U64 | oead.F64) -> None:
         """
         Add an item to the end of the list
         """
@@ -74,7 +100,7 @@ class Array:
         """
         Clear the contents
         """
-    def count(self, x: None | str | oead.Bytes | bytes | Array | list | Hash | dict | bool | oead.S32 | oead.F32 | oead.U32 | oead.S64 | oead.U64 | oead.F64) -> int:
+    def count(self, x: None | Hash32 | Hash64 | str | oead.Bytes | bytes | AlignedBinary | Array | list | Dictionary | bool | oead.S32 | oead.F32 | oead.U32 | oead.S64 | oead.U64 | oead.F64) -> int:
         """
         Return the number of times ``x`` appears in the list
         """
@@ -88,25 +114,25 @@ class Array:
         """
         Extend the list by appending all the items in the given list
         """
-    def insert(self, i: typing.SupportsInt | typing.SupportsIndex, x: None | str | oead.Bytes | bytes | Array | list | Hash | dict | bool | oead.S32 | oead.F32 | oead.U32 | oead.S64 | oead.U64 | oead.F64) -> None:
+    def insert(self, i: typing.SupportsInt | typing.SupportsIndex, x: None | Hash32 | Hash64 | str | oead.Bytes | bytes | AlignedBinary | Array | list | Dictionary | bool | oead.S32 | oead.F32 | oead.U32 | oead.S64 | oead.U64 | oead.F64) -> None:
         """
         Insert an item at a given position.
         """
     @typing.overload
-    def pop(self) -> None | str | oead.Bytes | Array | Hash | bool | oead.S32 | oead.F32 | oead.U32 | oead.S64 | oead.U64 | oead.F64:
+    def pop(self) -> None | Hash32 | Hash64 | str | oead.Bytes | AlignedBinary | Array | Dictionary | bool | oead.S32 | oead.F32 | oead.U32 | oead.S64 | oead.U64 | oead.F64:
         """
         Remove and return the last item
         """
     @typing.overload
-    def pop(self, i: typing.SupportsInt | typing.SupportsIndex) -> None | str | oead.Bytes | Array | Hash | bool | oead.S32 | oead.F32 | oead.U32 | oead.S64 | oead.U64 | oead.F64:
+    def pop(self, i: typing.SupportsInt | typing.SupportsIndex) -> None | Hash32 | Hash64 | str | oead.Bytes | AlignedBinary | Array | Dictionary | bool | oead.S32 | oead.F32 | oead.U32 | oead.S64 | oead.U64 | oead.F64:
         """
         Remove and return the item at index ``i``
         """
-    def remove(self, x: None | str | oead.Bytes | bytes | Array | list | Hash | dict | bool | oead.S32 | oead.F32 | oead.U32 | oead.S64 | oead.U64 | oead.F64) -> None:
+    def remove(self, x: None | Hash32 | Hash64 | str | oead.Bytes | bytes | AlignedBinary | Array | list | Dictionary | bool | oead.S32 | oead.F32 | oead.U32 | oead.S64 | oead.U64 | oead.F64) -> None:
         """
         Remove the first item from the list whose value is x. It is an error if there is no such item.
         """
-class Hash:
+class Dictionary:
     __hash__: typing.ClassVar[None] = None
     def __bool__(self) -> bool:
         """
@@ -123,9 +149,9 @@ class Hash:
         ...
     def __delitem__(self, arg0: str) -> None:
         ...
-    def __eq__(self, arg0: Hash | dict) -> bool:
+    def __eq__(self, arg0: Dictionary) -> bool:
         ...
-    def __getitem__(self, arg0: str) -> None | str | oead.Bytes | Array | Hash | bool | oead.S32 | oead.F32 | oead.U32 | oead.S64 | oead.U64 | oead.F64:
+    def __getitem__(self, arg0: str) -> None | Hash32 | Hash64 | str | oead.Bytes | AlignedBinary | Array | Dictionary | bool | oead.S32 | oead.F32 | oead.U32 | oead.S64 | oead.U64 | oead.F64:
         ...
     @typing.overload
     def __init__(self) -> None:
@@ -140,29 +166,129 @@ class Hash:
         ...
     def __len__(self) -> int:
         ...
-    def __setitem__(self, arg0: str, arg1: None | str | oead.Bytes | bytes | Array | list | Hash | dict | bool | oead.S32 | oead.F32 | oead.U32 | oead.S64 | oead.U64 | oead.F64) -> None:
+    def __setitem__(self, arg0: str, arg1: None | Hash32 | Hash64 | str | oead.Bytes | bytes | AlignedBinary | Array | list | Dictionary | bool | oead.S32 | oead.F32 | oead.U32 | oead.S64 | oead.U64 | oead.F64) -> None:
         ...
     def clear(self) -> None:
         ...
     @typing.overload
-    def get(self, key: str) -> None | str | oead.Bytes | Array | Hash | bool | oead.S32 | oead.F32 | oead.U32 | oead.S64 | oead.U64 | oead.F64:
+    def get(self, key: str) -> None | Hash32 | Hash64 | str | oead.Bytes | AlignedBinary | Array | Dictionary | bool | oead.S32 | oead.F32 | oead.U32 | oead.S64 | oead.U64 | oead.F64:
         ...
     @typing.overload
-    def get(self, key: str, default: _T) -> None | str | oead.Bytes | Array | Hash | bool | oead.S32 | oead.F32 | oead.U32 | oead.S64 | oead.U64 | oead.F64 | _T:
+    def get(self, key: str, default: _T) -> None | Hash32 | Hash64 | str | oead.Bytes | AlignedBinary | Array | Dictionary | bool | oead.S32 | oead.F32 | oead.U32 | oead.S64 | oead.U64 | oead.F64 | _T:
         ...
-    def items(self) -> typing.ItemsView[str, None | str | oead.Bytes | Array | Hash | bool | oead.S32 | oead.F32 | oead.U32 | oead.S64 | oead.U64 | oead.F64]:
+    def items(self) -> typing.ItemsView[str, None | Hash32 | Hash64 | str | oead.Bytes | AlignedBinary | Array | Dictionary | bool | oead.S32 | oead.F32 | oead.U32 | oead.S64 | oead.U64 | oead.F64]:
         ...
     def keys(self) -> typing.KeysView[str]:
         ...
-    def values(self) -> typing.ValuesView[None | str | oead.Bytes | Array | Hash | bool | oead.S32 | oead.F32 | oead.U32 | oead.S64 | oead.U64 | oead.F64]:
+    def values(self) -> typing.ValuesView[None | Hash32 | Hash64 | str | oead.Bytes | AlignedBinary | Array | Dictionary | bool | oead.S32 | oead.F32 | oead.U32 | oead.S64 | oead.U64 | oead.F64]:
         ...
-def from_binary(buffer: typing_extensions.Buffer) -> None | str | oead.Bytes | Array | Hash | bool | oead.S32 | oead.F32 | oead.U32 | oead.S64 | oead.U64 | oead.F64:
+class Hash32:
+    __hash__: typing.ClassVar[None] = None
+    def __bool__(self) -> bool:
+        """
+        Check whether the map is nonempty
+        """
+    @typing.overload
+    def __contains__(self, arg0: typing.Any) -> bool:
+        ...
+    @typing.overload
+    def __contains__(self, arg0: typing.SupportsInt | typing.SupportsIndex) -> bool:
+        ...
+    @typing.overload
+    def __contains__(self, arg0: typing.Any) -> bool:
+        ...
+    def __delitem__(self, arg0: typing.SupportsInt | typing.SupportsIndex) -> None:
+        ...
+    def __eq__(self, arg0: Hash32) -> bool:
+        ...
+    def __getitem__(self, arg0: typing.SupportsInt | typing.SupportsIndex) -> None | Hash32 | Hash64 | str | oead.Bytes | AlignedBinary | Array | Dictionary | bool | oead.S32 | oead.F32 | oead.U32 | oead.S64 | oead.U64 | oead.F64:
+        ...
+    @typing.overload
+    def __init__(self) -> None:
+        ...
+    @typing.overload
+    def __init__(self, iterator: collections.abc.Iterator) -> None:
+        ...
+    @typing.overload
+    def __init__(self, dictionary: dict) -> None:
+        ...
+    def __iter__(self) -> collections.abc.Iterator[int]:
+        ...
+    def __len__(self) -> int:
+        ...
+    def __setitem__(self, arg0: typing.SupportsInt | typing.SupportsIndex, arg1: None | Hash32 | Hash64 | str | oead.Bytes | bytes | AlignedBinary | Array | list | Dictionary | bool | oead.S32 | oead.F32 | oead.U32 | oead.S64 | oead.U64 | oead.F64) -> None:
+        ...
+    def clear(self) -> None:
+        ...
+    @typing.overload
+    def get(self, key: typing.SupportsInt | typing.SupportsIndex) -> None | Hash32 | Hash64 | str | oead.Bytes | AlignedBinary | Array | Dictionary | bool | oead.S32 | oead.F32 | oead.U32 | oead.S64 | oead.U64 | oead.F64:
+        ...
+    @typing.overload
+    def get(self, key: typing.SupportsInt | typing.SupportsIndex, default: _T) -> None | Hash32 | Hash64 | str | oead.Bytes | AlignedBinary | Array | Dictionary | bool | oead.S32 | oead.F32 | oead.U32 | oead.S64 | oead.U64 | oead.F64 | _T:
+        ...
+    def items(self) -> typing.ItemsView[typing.SupportsInt | typing.SupportsIndex, None | Hash32 | Hash64 | str | oead.Bytes | AlignedBinary | Array | Dictionary | bool | oead.S32 | oead.F32 | oead.U32 | oead.S64 | oead.U64 | oead.F64]:
+        ...
+    def keys(self) -> typing.KeysView[typing.SupportsInt | typing.SupportsIndex]:
+        ...
+    def values(self) -> typing.ValuesView[None | Hash32 | Hash64 | str | oead.Bytes | AlignedBinary | Array | Dictionary | bool | oead.S32 | oead.F32 | oead.U32 | oead.S64 | oead.U64 | oead.F64]:
+        ...
+class Hash64:
+    __hash__: typing.ClassVar[None] = None
+    def __bool__(self) -> bool:
+        """
+        Check whether the map is nonempty
+        """
+    @typing.overload
+    def __contains__(self, arg0: typing.Any) -> bool:
+        ...
+    @typing.overload
+    def __contains__(self, arg0: typing.SupportsInt | typing.SupportsIndex) -> bool:
+        ...
+    @typing.overload
+    def __contains__(self, arg0: typing.Any) -> bool:
+        ...
+    def __delitem__(self, arg0: typing.SupportsInt | typing.SupportsIndex) -> None:
+        ...
+    def __eq__(self, arg0: Hash64) -> bool:
+        ...
+    def __getitem__(self, arg0: typing.SupportsInt | typing.SupportsIndex) -> None | Hash32 | Hash64 | str | oead.Bytes | AlignedBinary | Array | Dictionary | bool | oead.S32 | oead.F32 | oead.U32 | oead.S64 | oead.U64 | oead.F64:
+        ...
+    @typing.overload
+    def __init__(self) -> None:
+        ...
+    @typing.overload
+    def __init__(self, iterator: collections.abc.Iterator) -> None:
+        ...
+    @typing.overload
+    def __init__(self, dictionary: dict) -> None:
+        ...
+    def __iter__(self) -> collections.abc.Iterator[int]:
+        ...
+    def __len__(self) -> int:
+        ...
+    def __setitem__(self, arg0: typing.SupportsInt | typing.SupportsIndex, arg1: None | Hash32 | Hash64 | str | oead.Bytes | bytes | AlignedBinary | Array | list | Dictionary | bool | oead.S32 | oead.F32 | oead.U32 | oead.S64 | oead.U64 | oead.F64) -> None:
+        ...
+    def clear(self) -> None:
+        ...
+    @typing.overload
+    def get(self, key: typing.SupportsInt | typing.SupportsIndex) -> None | Hash32 | Hash64 | str | oead.Bytes | AlignedBinary | Array | Dictionary | bool | oead.S32 | oead.F32 | oead.U32 | oead.S64 | oead.U64 | oead.F64:
+        ...
+    @typing.overload
+    def get(self, key: typing.SupportsInt | typing.SupportsIndex, default: _T) -> None | Hash32 | Hash64 | str | oead.Bytes | AlignedBinary | Array | Dictionary | bool | oead.S32 | oead.F32 | oead.U32 | oead.S64 | oead.U64 | oead.F64 | _T:
+        ...
+    def items(self) -> typing.ItemsView[typing.SupportsInt | typing.SupportsIndex, None | Hash32 | Hash64 | str | oead.Bytes | AlignedBinary | Array | Dictionary | bool | oead.S32 | oead.F32 | oead.U32 | oead.S64 | oead.U64 | oead.F64]:
+        ...
+    def keys(self) -> typing.KeysView[typing.SupportsInt | typing.SupportsIndex]:
+        ...
+    def values(self) -> typing.ValuesView[None | Hash32 | Hash64 | str | oead.Bytes | AlignedBinary | Array | Dictionary | bool | oead.S32 | oead.F32 | oead.U32 | oead.S64 | oead.U64 | oead.F64]:
+        ...
+def from_binary(buffer: typing_extensions.Buffer) -> None | Hash32 | Hash64 | str | oead.Bytes | AlignedBinary | Array | Dictionary | bool | oead.S32 | oead.F32 | oead.U32 | oead.S64 | oead.U64 | oead.F64:
     """
-    :return: An Array or a Hash.
+    :return: An Array, Dictionary, or Hash (value type is possible on versions >= 8).
     """
-def from_text(yml_text: str) -> None | str | oead.Bytes | Array | Hash | bool | oead.S32 | oead.F32 | oead.U32 | oead.S64 | oead.U64 | oead.F64:
+def from_text(yml_text: str) -> None | Hash32 | Hash64 | str | oead.Bytes | AlignedBinary | Array | Dictionary | bool | oead.S32 | oead.F32 | oead.U32 | oead.S64 | oead.U64 | oead.F64:
     """
-    :return: An Array or a Hash.
+    :return: An Array, Dictionary, or Hash (value type is possible on versions >= 8).
     """
 def get_bool(data: typing.Any) -> bool:
     ...

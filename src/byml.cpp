@@ -22,7 +22,6 @@
 #include <algorithm>
 #include <array>
 #include <cstring>
-#include <map>
 #include <stdexcept>
 #include <string_view>
 
@@ -42,9 +41,9 @@ struct ResHeader {
   std::array<char, 2> magic;
   /// Format version (1-4).
   u16 version;
-  /// Offset to the hash key table, relative to start (usually 0x010)
+  /// Offset to the key table, relative to start (usually 0x010)
   /// May be 0 if no hash nodes are used. Must be a string table node (0xc2).
-  u32 hash_key_table_offset;
+  u32 key_table_offset;
   /// Offset to the string table, relative to start. May be 0 if no strings are used.
   /// Must be a string table node (0xc2).
   u32 string_table_offset;
@@ -55,12 +54,20 @@ struct ResHeader {
 static_assert(sizeof(ResHeader) == 0x10);
 
 enum class NodeType : u8 {
+  Hash32 = 0x20,
+  Hash64 = 0x21,
+  OrderedHash32 = 0x30,  // Unsupported
+  OrderedHash64 = 0x31,  // Unsupported
   String = 0xa0,
   Binary = 0xa1,
+  AlignedBinary = 0xa2,
   Array = 0xc0,
-  Hash = 0xc1,
+  Dictionary = 0xc1,
   StringTable = 0xc2,
-  PathTable = 0xc3,  // Unsupported
+  PathTable = 0xc3,          // Unsupported
+  OrderedDictionary = 0xc4,  // Unsupported
+  RelocatedStringTable = 0xc5,
+  MonoTypedArray = 0xc8,  // Unsupported
   Bool = 0xd0,
   Int = 0xd1,
   Float = 0xd2,
@@ -73,16 +80,17 @@ enum class NodeType : u8 {
 
 constexpr NodeType GetNodeType(Byml::Type type) {
   constexpr std::array map{
-      NodeType::Null, NodeType::String, NodeType::Binary, NodeType::Array,
-      NodeType::Hash, NodeType::Bool,   NodeType::Int,    NodeType::Float,
-      NodeType::UInt, NodeType::Int64,  NodeType::UInt64, NodeType::Double,
+      NodeType::Null,   NodeType::Hash32,        NodeType::Hash64, NodeType::String,
+      NodeType::Binary, NodeType::AlignedBinary, NodeType::Array,  NodeType::Dictionary,
+      NodeType::Bool,   NodeType::Int,           NodeType::Float,  NodeType::UInt,
+      NodeType::Int64,  NodeType::UInt64,        NodeType::Double,
   };
   return map[u8(type)];
 }
 
 template <typename T = NodeType>
 constexpr bool IsContainerType(T type) {
-  return type == T::Array || type == T::Hash;
+  return type == T::Array || type == T::Dictionary || type == T::Hash32 || type == T::Hash64;
 }
 
 template <typename T = NodeType>
@@ -91,12 +99,17 @@ constexpr bool IsLongType(T type) {
 }
 
 template <typename T = NodeType>
+constexpr bool IsBinaryType(T type) {
+  return type == T::Binary || type == T::AlignedBinary;
+}
+
+template <typename T = NodeType>
 constexpr bool IsNonInlineType(T type) {
-  return IsContainerType(type) || IsLongType(type) || type == T::Binary;
+  return IsContainerType(type) || IsLongType(type) || IsBinaryType(type);
 }
 
 constexpr bool IsValidVersion(int version) {
-  return 1 <= version && version <= 4;
+  return 1 <= version && version <= 10;
 }
 
 class StringTableParser {
@@ -107,8 +120,12 @@ public:
       return;
     const auto type = reader.Read<NodeType>(offset);
     const auto num_entries = reader.ReadU24();
-    if (!type || *type != NodeType::StringTable || !num_entries)
+    if (!type || (*type != NodeType::StringTable && *type != NodeType::RelocatedStringTable) ||
+        !num_entries)
       throw InvalidDataError("Invalid string table");
+    if (*type == NodeType::RelocatedStringTable) {
+      m_offset += *reader.Read<u64>();
+    }
     m_size = *num_entries;
   }
 
@@ -147,12 +164,12 @@ public:
 
     m_reader = {data, endianness};
 
-    const u16 version = *m_reader.Read<u16>(offsetof(ResHeader, version));
-    if (!IsValidVersion(version))
+    m_version = *m_reader.Read<u16>(offsetof(ResHeader, version));
+    if (!IsValidVersion(m_version))
       throw InvalidDataError("Unexpected version");
 
-    m_hash_key_table = StringTableParser(
-        m_reader, *m_reader.Read<u32>(offsetof(ResHeader, hash_key_table_offset)));
+    m_hash_key_table =
+        StringTableParser(m_reader, *m_reader.Read<u32>(offsetof(ResHeader, key_table_offset)));
     m_string_table =
         StringTableParser(m_reader, *m_reader.Read<u32>(offsetof(ResHeader, string_table_offset)));
 
@@ -172,7 +189,7 @@ public:
   Byml Parse() {
     if (m_root_node_offset == 0)
       return Byml::Null();
-    return ParseContainerNode(m_root_node_offset);
+    return ParseRootNode(m_root_node_offset);
   }
 
 private:
@@ -196,6 +213,14 @@ private:
       const u32 size = m_reader.Read<u32>(data_offset).value();
       return Byml{std::vector<u8>(m_reader.span().begin() + data_offset + 4,
                                   m_reader.span().begin() + data_offset + 4 + size)};
+    }
+    case NodeType::AlignedBinary: {
+      const u32 data_offset = *raw;
+      const u32 size = m_reader.Read<u32>(data_offset).value();
+      const u32 align = m_reader.Read<u32>().value();
+      return Byml{Byml::AlignedBinary{{m_reader.span().begin() + data_offset + 8,
+                                       m_reader.span().begin() + data_offset + 8 + size},
+                                      align}};
     }
     case NodeType::Bool:
       return *raw != 0;
@@ -224,10 +249,25 @@ private:
     return ParseValueNode(offset, type);
   }
 
+  template <typename T>
+  Byml ParseHashNode(u32 offset, u32 size) {
+    using KeyType = T::key_type;
+    T result;
+    constexpr size_t entry_size = sizeof(KeyType) + 4;
+    const u32 types_offset = offset + 4 + entry_size * size;
+    for (u32 i = 0; i < size; ++i) {
+      const auto type = m_reader.Read<NodeType>(types_offset + i);
+      const auto key = m_reader.Read<KeyType>(offset + 4 + entry_size * i);
+      result.emplace(key.value(),
+                     ParseContainerChildNode(offset + 4 + entry_size * i + 4, type.value()));
+    }
+    return Byml{std::move(result)};
+  }
+
   Byml ParseArrayNode(u32 offset, u32 size) {
     Byml::Array result;
     result.reserve(size);
-    const u32 values_offset = offset + 4 + util::AlignUp(size, 4);
+    const u32 values_offset = util::AlignUp(offset + 4 + size, 4);
     for (u32 i = 0; i < size; ++i) {
       const auto type = m_reader.Read<NodeType>(offset + 4 + i);
       result.emplace_back(ParseContainerChildNode(values_offset + 4 * i, type.value()));
@@ -235,8 +275,8 @@ private:
     return Byml{std::move(result)};
   }
 
-  Byml ParseHashNode(u32 offset, u32 size) {
-    Byml::Hash result;
+  Byml ParseDictionaryNode(u32 offset, u32 size) {
+    Byml::Dictionary result;
     for (u32 i = 0; i < size; ++i) {
       const u32 entry_offset = offset + 4 + 8 * i;
       const auto name_idx = m_reader.ReadU24(entry_offset);
@@ -254,19 +294,38 @@ private:
       throw InvalidDataError("Invalid container node");
 
     switch (*type) {
+    case NodeType::Hash32:
+      return ParseHashNode<Byml::Hash32>(offset, *num_entries);
+    case NodeType::Hash64:
+      return ParseHashNode<Byml::Hash64>(offset, *num_entries);
     case NodeType::Array:
       return ParseArrayNode(offset, *num_entries);
-    case NodeType::Hash:
-      return ParseHashNode(offset, *num_entries);
+    case NodeType::Dictionary:
+      return ParseDictionaryNode(offset, *num_entries);
     default:
-      throw InvalidDataError("Invalid container node: must be array or hash");
+      throw InvalidDataError("Invalid container node: must be array, dictionary, or hash");
     }
+  }
+
+  Byml ParseRootNode(u32 offset) {
+    if (m_version < 8)
+      return ParseContainerNode(offset);
+
+    const auto type = m_reader.Read<NodeType>(offset);
+    if (!type)
+      throw InvalidDataError("Invalid root node offset");
+
+    if (IsContainerType(*type))
+      return ParseContainerNode(offset);
+    else
+      return ParseValueNode(offset + sizeof(u32), *type);
   }
 
   util::BinaryReader m_reader;
   StringTableParser m_hash_key_table;
   StringTableParser m_string_table;
   u32 m_root_node_offset;
+  u16 m_version;
 };
 
 template <typename Value, typename T>
@@ -294,9 +353,19 @@ struct WriteContext {
         for (const auto& value : data.GetArray())
           self(self, value);
         break;
-      case Byml::Type::Hash:
-        for (const auto& [key, value] : data.GetHash()) {
+      case Byml::Type::Dictionary:
+        for (const auto& [key, value] : data.GetDictionary()) {
           hash_key_table.Add(key);
+          self(self, value);
+        }
+        break;
+      case Byml::Type::Hash32:
+        for (const auto& [key, value] : data.GetHash32()) {
+          self(self, value);
+        }
+        break;
+      case Byml::Type::Hash64:
+        for (const auto& [key, value] : data.GetHash64()) {
           self(self, value);
         }
         break;
@@ -319,6 +388,14 @@ struct WriteContext {
     case Byml::Type::Binary:
       writer.Write(static_cast<u32>(data.GetBinary().size()));
       writer.WriteBytes(data.GetBinary());
+      return;
+    case Byml::Type::AlignedBinary:
+      // The size and alignment are written in the 8 bytes before the aligned data buffer
+      // To compensate, we need to move the writer forward by 8 bytes first before aligning
+      writer.Seek(util::AlignUp(writer.Tell() + 8, data.GetAlignedBinary().align) - 8);
+      writer.Write(static_cast<u32>(data.GetAlignedBinary().data.size()));
+      writer.Write(static_cast<u32>(data.GetAlignedBinary().align));
+      writer.WriteBytes(data.GetAlignedBinary().data);
       return;
     case Byml::Type::Bool:
       return writer.Write<u32>(data.GetBool());
@@ -357,6 +434,34 @@ struct WriteContext {
     };
 
     switch (data.GetType()) {
+    case Byml::Type::Hash32: {
+      const auto& hash = data.GetHash32();
+      writer.Write(NodeType::Hash32);
+      writer.WriteU24(hash.size());
+      for (const auto& [key, value] : hash) {
+        writer.Write(key);
+        write_container_item(value);
+      }
+      for (const auto& [key, value] : hash) {
+        writer.Write(GetNodeType(value.GetType()));
+      }
+      writer.AlignUp(4);
+      break;
+    }
+    case Byml::Type::Hash64: {
+      const auto& hash = data.GetHash64();
+      writer.Write(NodeType::Hash64);
+      writer.WriteU24(hash.size());
+      for (const auto& [key, value] : hash) {
+        writer.Write(key);
+        write_container_item(value);
+      }
+      for (const auto& [key, value] : hash) {
+        writer.Write(GetNodeType(value.GetType()));
+      }
+      writer.AlignUp(4);
+      break;
+    }
     case Byml::Type::Array: {
       const auto& array = data.GetArray();
       writer.Write(NodeType::Array);
@@ -368,9 +473,9 @@ struct WriteContext {
         write_container_item(item);
       break;
     }
-    case Byml::Type::Hash: {
-      const auto& hash = data.GetHash();
-      writer.Write(NodeType::Hash);
+    case Byml::Type::Dictionary: {
+      const auto& hash = data.GetDictionary();
+      writer.Write(NodeType::Dictionary);
       writer.WriteU24(hash.size());
       for (const auto& [key, value] : hash) {
         const auto type = GetNodeType(value.GetType());
@@ -390,15 +495,37 @@ struct WriteContext {
         // This node has already been written. Reuse its data.
         writer.RunAt(node.offset_in_container, [&](size_t) { writer.Write<u32>(it->second); });
       } else {
-        const size_t offset = writer.Tell();
+        const auto type = node.data->GetType();
+        if (IsContainerType(type)) {
+          // Unsure if necessary but a lot of other tools will break from
+          // unaligned reads so compatiblity I guess
+          writer.AlignUp(4);
+        }
+        // See note above about alignment
+        const size_t offset =
+            type != Byml::Type::AlignedBinary ?
+                writer.Tell() :
+                util::AlignUp(writer.Tell() + 8, node.data->GetAlignedBinary().align) - 8;
         writer.RunAt(node.offset_in_container, [&](size_t) { writer.Write<u32>(offset); });
         non_inline_node_data.emplace(*node.data, offset);
-        if (IsContainerType(node.data->GetType()))
+        if (IsContainerType(type))
           WriteContainerNode(*node.data);
         else
           WriteValueNode(*node.data);
       }
     }
+  }
+
+  void WriteRootNode(const Byml& data, u16 version) {
+    if (IsContainerType(data.GetType()))
+      WriteContainerNode(data);
+
+    if (version < 8)
+      throw InvalidDataError("Non-container root nodes are not supported on this version");
+
+    writer.Write(GetNodeType(data.GetType()));
+    writer.AlignUp(4);
+    WriteValueNode(data);
   }
 
   struct StringTable {
@@ -468,7 +595,7 @@ std::vector<u8> Byml::ToBinary(bool big_endian, int version) const {
     return ctx.writer.Finalize();
 
   if (ctx.hash_key_table) {
-    ctx.writer.WriteCurrentOffsetAt<u32>(offsetof(byml::ResHeader, hash_key_table_offset));
+    ctx.writer.WriteCurrentOffsetAt<u32>(offsetof(byml::ResHeader, key_table_offset));
     ctx.WriteStringTable(ctx.hash_key_table);
   }
 
@@ -484,8 +611,16 @@ std::vector<u8> Byml::ToBinary(bool big_endian, int version) const {
   return ctx.writer.Finalize();
 }
 
-Byml::Hash& Byml::GetHash() {
-  return Get<Type::Hash>();
+Byml::Hash32& Byml::GetHash32() {
+  return Get<Type::Hash32>();
+}
+
+Byml::Hash64& Byml::GetHash64() {
+  return Get<Type::Hash64>();
+}
+
+Byml::Dictionary& Byml::GetDictionary() {
+  return Get<Type::Dictionary>();
 }
 
 Byml::Array& Byml::GetArray() {
@@ -500,8 +635,20 @@ std::vector<u8>& Byml::GetBinary() {
   return Get<Type::Binary>();
 }
 
-const Byml::Hash& Byml::GetHash() const {
-  return Get<Type::Hash>();
+Byml::AlignedBinary& Byml::GetAlignedBinary() {
+  return Get<Type::AlignedBinary>();
+}
+
+const Byml::Hash32& Byml::GetHash32() const {
+  return Get<Type::Hash32>();
+}
+
+const Byml::Hash64& Byml::GetHash64() const {
+  return Get<Type::Hash64>();
+}
+
+const Byml::Dictionary& Byml::GetDictionary() const {
+  return Get<Type::Dictionary>();
 }
 
 const Byml::Array& Byml::GetArray() const {
@@ -514,6 +661,10 @@ const Byml::String& Byml::GetString() const {
 
 const std::vector<u8>& Byml::GetBinary() const {
   return Get<Type::Binary>();
+}
+
+const Byml::AlignedBinary& Byml::GetAlignedBinary() const {
+  return Get<Type::AlignedBinary>();
 }
 
 bool Byml::GetBool() const {
