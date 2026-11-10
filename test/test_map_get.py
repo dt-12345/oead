@@ -51,6 +51,6 @@ def test_get_sarc_file_map():
 
 def test_wrong_self_raises_type_error():
     with pytest.raises(TypeError):
-        oead.byml.Hash.keys(5)
+        oead.byml.Dictionary.keys(5)
     with pytest.raises(TypeError):
         oead.aamp.ParameterMap.keys(5)
