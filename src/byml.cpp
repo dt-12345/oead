@@ -185,8 +185,8 @@ public:
 
     m_reader = {data, endianness};
 
-    m_version = *m_reader.Read<u16>(offsetof(ResHeader, version));
-    if (!IsValidVersion(m_version))
+    const u16 version = *m_reader.Read<u16>(offsetof(ResHeader, version));
+    if (!IsValidVersion(version))
       throw InvalidDataError("Unexpected version");
 
     m_hash_key_table =
@@ -402,9 +402,6 @@ private:
   }
 
   Byml ParseRootNode(u32 offset) {
-    if (m_version < 8)
-      return ParseContainerNode(offset);
-
     const auto type = m_reader.Read<NodeType>(offset);
     if (!type)
       throw InvalidDataError("Invalid root node offset");
@@ -419,7 +416,6 @@ private:
   StringTableParser m_hash_key_table;
   StringTableParser m_string_table;
   u32 m_root_node_offset;
-  u16 m_version;
 };
 
 template <typename Value, typename T>
@@ -733,16 +729,14 @@ struct WriteContext {
     }
   }
 
-  void WriteRootNode(const Byml& data, u16 version) {
-    if (IsContainerType(data.GetType()))
+  void WriteRootNode(const Byml& data) {
+    if (IsContainerType(data.GetType())) {
       WriteContainerNode(data);
-
-    if (version < 8)
-      throw InvalidDataError("Non-container root nodes are not supported on this version");
-
-    writer.Write(GetNodeType(data.GetType()));
-    writer.AlignUp(4);
-    WriteValueNode(data);
+    } else {
+      writer.Write(GetNodeType(data.GetType()));
+      writer.AlignUp(4);
+      WriteValueNode(data);
+    }
   }
 
   struct StringTable {
@@ -823,7 +817,7 @@ std::vector<u8> Byml::ToBinary(bool big_endian, int version) const {
 
   ctx.writer.WriteCurrentOffsetAt<u32>(offsetof(byml::ResHeader, root_node_offset));
   ctx.writer.AlignUp(4);
-  ctx.WriteContainerNode(*this);
+  ctx.WriteRootNode(*this);
   ctx.writer.AlignUp(4);
   return ctx.writer.Finalize();
 }
