@@ -52,6 +52,7 @@ public:
     Binary,
     AlignedBinary,
     Array,
+    MonoTypedArray,
     Dictionary,
     OrderedDictionary,
     Bool,
@@ -80,6 +81,25 @@ public:
                        std::allocator<std::pair<std::string, Byml>>,
                        std::vector<std::pair<std::string, Byml>>>;
 
+  struct MonoTypedArray {
+    MonoTypedArray() : elements(), type(Type::Null) {}
+
+    explicit MonoTypedArray(Type type_) : elements(), type(type_) {}
+
+    MonoTypedArray(const MonoTypedArray& other) { *this = other; }
+    MonoTypedArray(MonoTypedArray&& other) { *this = std::move(other); }
+    MonoTypedArray& operator=(const MonoTypedArray& other) = default;
+    MonoTypedArray& operator=(MonoTypedArray&& other) = default;
+
+    MonoTypedArray(Array&& elements_, Type type_);
+    MonoTypedArray(const Array& elements_, Type type_);
+
+    std::vector<Byml> elements;
+    Type type;
+
+    OEAD_DEFINE_FIELDS(MonoTypedArray, elements, type);
+  };
+
   struct AlignedBinary {
     std::vector<u8> data;
     std::size_t align;
@@ -87,11 +107,13 @@ public:
     OEAD_DEFINE_FIELDS(AlignedBinary, data, align);
   };
 
-  using Value = util::Variant<
-      Type, Null, std::unique_ptr<Hash32>, std::unique_ptr<Hash64>, std::unique_ptr<OrderedHash32>,
-      std::unique_ptr<OrderedHash64>, std::unique_ptr<String>, std::unique_ptr<std::vector<u8>>,
-      std::unique_ptr<AlignedBinary>, std::unique_ptr<Array>, std::unique_ptr<Dictionary>,
-      std::unique_ptr<OrderedDictionary>, bool, S32, F32, U32, S64, U64, F64>;
+  using Value =
+      util::Variant<Type, Null, std::unique_ptr<Hash32>, std::unique_ptr<Hash64>,
+                    std::unique_ptr<OrderedHash32>, std::unique_ptr<OrderedHash64>,
+                    std::unique_ptr<String>, std::unique_ptr<std::vector<u8>>,
+                    std::unique_ptr<AlignedBinary>, std::unique_ptr<Array>,
+                    std::unique_ptr<MonoTypedArray>, std::unique_ptr<Dictionary>,
+                    std::unique_ptr<OrderedDictionary>, bool, S32, F32, U32, S64, U64, F64>;
 
   Byml() = default;
   Byml(const Byml& other) { *this = other; }
@@ -243,6 +265,7 @@ public:
   Dictionary& GetDictionary();
   OrderedDictionary& GetOrderedDictionary();
   Array& GetArray();
+  MonoTypedArray& GetMonoTypedArray();
   String& GetString();
   std::vector<u8>& GetBinary();
   AlignedBinary& GetAlignedBinary();
@@ -253,6 +276,7 @@ public:
   const Dictionary& GetDictionary() const;
   const OrderedDictionary& GetOrderedDictionary() const;
   const Array& GetArray() const;
+  const MonoTypedArray& GetMonoTypedArray() const;
   const String& GetString() const;
   const std::vector<u8>& GetBinary() const;
   const AlignedBinary& GetAlignedBinary() const;

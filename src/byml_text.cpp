@@ -79,13 +79,16 @@ static Byml ScalarToValue(std::string_view tag, yml::Scalar&& scalar) {
 
 static bool ShouldUseInlineYamlStyle(const Byml& container) {
   const auto is_simple = [](const Byml& item) {
-    return !util::IsAnyOf(item.GetType(), Byml::Type::Array, Byml::Type::Dictionary,
-                          Byml::Type::OrderedDictionary, Byml::Type::Hash32, Byml::Type::Hash64,
-                          Byml::Type::OrderedHash32, Byml::Type::OrderedHash64);
+    return !util::IsAnyOf(item.GetType(), Byml::Type::Array, Byml::Type::MonoTypedArray,
+                          Byml::Type::Dictionary, Byml::Type::OrderedDictionary, Byml::Type::Hash32,
+                          Byml::Type::Hash64, Byml::Type::OrderedHash32, Byml::Type::OrderedHash64);
   };
   switch (container.GetType()) {
   case Byml::Type::Array:
     return container.GetArray().size() <= 10 && absl::c_all_of(container.GetArray(), is_simple);
+  case Byml::Type::MonoTypedArray:
+    return container.GetMonoTypedArray().elements.size() <= 10 &&
+           absl::c_all_of(container.GetMonoTypedArray().elements, is_simple);
   case Byml::Type::Dictionary:
     return container.GetDictionary().size() <= 10 &&
            absl::c_all_of(container.GetDictionary(),
@@ -112,6 +115,93 @@ static bool ShouldUseInlineYamlStyle(const Byml& container) {
                           [&](const auto& p) { return is_simple(p.second); });
   default:
     return false;
+  }
+}
+
+static Byml::Type ParseBymlType(std::string_view type) {
+  if (type == "Null")
+    return Byml::Type::Null;
+  if (type == "Hash32")
+    return Byml::Type::Hash32;
+  if (type == "Hash64")
+    return Byml::Type::Hash64;
+  if (type == "OrderedHash32")
+    return Byml::Type::OrderedHash32;
+  if (type == "OrderedHash64")
+    return Byml::Type::OrderedHash64;
+  if (type == "String")
+    return Byml::Type::String;
+  if (type == "Binary")
+    return Byml::Type::Binary;
+  if (type == "AlignedBinary")
+    return Byml::Type::AlignedBinary;
+  if (type == "Array")
+    return Byml::Type::Array;
+  if (type == "MonoTypedArray")
+    return Byml::Type::MonoTypedArray;
+  if (type == "Dictionary")
+    return Byml::Type::Dictionary;
+  if (type == "OrderedDictionary")
+    return Byml::Type::OrderedDictionary;
+  if (type == "Bool")
+    return Byml::Type::Bool;
+  if (type == "Int")
+    return Byml::Type::Int;
+  if (type == "Float")
+    return Byml::Type::Float;
+  if (type == "UInt")
+    return Byml::Type::UInt;
+  if (type == "Int64")
+    return Byml::Type::Int64;
+  if (type == "UInt64")
+    return Byml::Type::UInt64;
+  if (type == "Double")
+    return Byml::Type::Double;
+  throw InvalidDataError("Unknown node type");
+}
+
+static std::string_view ConvertBymlTypeToString(Byml::Type type) {
+  switch (type) {
+  case Byml::Type::Null:
+    return "Null";
+  case Byml::Type::Hash32:
+    return "Hash32";
+  case Byml::Type::Hash64:
+    return "Hash64";
+  case Byml::Type::OrderedHash32:
+    return "OrderedHash32";
+  case Byml::Type::OrderedHash64:
+    return "OrderedHash64";
+  case Byml::Type::String:
+    return "String";
+  case Byml::Type::Binary:
+    return "Binary";
+  case Byml::Type::AlignedBinary:
+    return "AlignedBinary";
+  case Byml::Type::Array:
+    return "Array";
+  case Byml::Type::MonoTypedArray:
+    return "MonoTypedArray";
+  case Byml::Type::Dictionary:
+    return "Dictionary";
+  case Byml::Type::OrderedDictionary:
+    return "OrderedDictionary";
+  case Byml::Type::Bool:
+    return "Bool";
+  case Byml::Type::Int:
+    return "Int";
+  case Byml::Type::Float:
+    return "Float";
+  case Byml::Type::UInt:
+    return "UInt";
+  case Byml::Type::Int64:
+    return "Int64";
+  case Byml::Type::UInt64:
+    return "UInt64";
+  case Byml::Type::Double:
+    return "Double";
+  default:
+    throw InvalidDataError("Unknown node type");
   }
 }
 
@@ -193,6 +283,23 @@ Byml ParseYamlNode(ryml::ConstNodeRef node) {
         hash.emplace(key, std::move(value));
       }
       return Byml{std::move(hash)};
+    } else if (yml::RymlGetValTag(node) == "!typed_array" ||
+               yml::RymlGetValTag(node) == "!mono_typed_array") {
+      const auto& type = node["Type"];
+      const auto& elements = node["Elements"];
+      if (type.val_tag().not_empty())
+        throw InvalidDataError("Unknown value tag for MonoTypedArray Type");
+      if (!elements.is_seq())
+        throw InvalidDataError("MonoTypedArray Elements field must be a sequence");
+      auto array = Byml::MonoTypedArray{};
+      array.type = ParseBymlType(yml::RymlSubstrToStrView(type.val()));
+      array.elements.reserve(elements.num_children());
+      for (const auto& child : elements) {
+        const auto& element = array.elements.emplace_back(ParseYamlNode(child));
+        if (element.GetType() != array.type)
+          throw TypeError("MonoTypedArray has non-matching element type");
+      }
+      return Byml{std::move(array)};
     } else if (yml::RymlGetValTag(node) == "!aligned_binary" ||
                yml::RymlGetValTag(node) == "!!file") {
       const auto& align = node["Alignment"];
@@ -261,6 +368,31 @@ std::string Byml::ToText() const {
 
           for (const Byml& item : v)
             self(self, item);
+
+          yaml_sequence_end_event_initialize(&event);
+          emitter.Emit(event);
+        },
+        [&](const MonoTypedArray& v) {
+          const auto style = byml::ShouldUseInlineYamlStyle(v) ? YAML_FLOW_MAPPING_STYLE :
+                                                                 YAML_BLOCK_MAPPING_STYLE;
+          yml::LibyamlEmitter::MappingScope scope{emitter, "!typed_array", style};
+
+          emitter.EmitString("Type");
+          emitter.EmitString(byml::ConvertBymlTypeToString(v.type));
+          emitter.EmitString("Elements");
+          
+          yaml_event_t event;
+          const auto seq_style = byml::ShouldUseInlineYamlStyle(v) ? YAML_FLOW_SEQUENCE_STYLE :
+                                                                     YAML_BLOCK_SEQUENCE_STYLE;
+
+          yaml_sequence_start_event_initialize(&event, nullptr, nullptr, 1, seq_style);
+          emitter.Emit(event);
+
+          for (const Byml& item : v.elements) {
+            if (item.GetType() != v.type)
+              throw TypeError("MonoTypedArray has non-matching element type");
+            self(self, item);
+          }
 
           yaml_sequence_end_event_initialize(&event);
           emitter.Emit(event);

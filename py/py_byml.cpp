@@ -23,6 +23,7 @@
 #include <type_traits>
 #include <vector>
 
+#include <pybind11/native_enum.h>
 #include <pybind11/operators.h>
 #include <pybind11/pybind11.h>
 
@@ -78,6 +79,11 @@ static auto BorrowByml(Callable&& callable) {
       util::ScopeGuard guard{[&] { ref = std::move(obj.Get<Byml::Type::Array>()); }};
       return invoke(std::move(ref));
     }
+    if (py::isinstance<Byml::MonoTypedArray>(handle)) {
+      auto& ref = handle.cast<Byml::MonoTypedArray&>();
+      util::ScopeGuard guard{[&] { ref = std::move(obj.Get<Byml::Type::MonoTypedArray>()); }};
+      return invoke(std::move(ref));
+    }
     if (py::isinstance<Byml::Dictionary>(handle)) {
       auto& ref = handle.cast<Byml::Dictionary&>();
       util::ScopeGuard guard{[&] { ref = std::move(obj.Get<Byml::Type::Dictionary>()); }};
@@ -115,8 +121,30 @@ static auto BorrowByml(Callable&& callable) {
 void BindByml(py::module& parent) {
   auto m = parent.def_submodule("byml");
 
-  py::class_<Byml::AlignedBinary> clas(m, "AlignedBinary");
-  clas.def(py::init<>())
+  py::native_enum<Byml::Type>(m, "Type", "enum.Enum")
+    .value("Null", Byml::Type::Null)
+    .value("Hash32", Byml::Type::Hash32)
+    .value("Hash64", Byml::Type::Hash64)
+    .value("OrderedHash32", Byml::Type::OrderedHash32)
+    .value("OrderedHash64", Byml::Type::OrderedHash64)
+    .value("String", Byml::Type::String)
+    .value("Binary", Byml::Type::Binary)
+    .value("AlignedBinary", Byml::Type::AlignedBinary)
+    .value("Array", Byml::Type::Array)
+    .value("MonoTypedArray", Byml::Type::MonoTypedArray)
+    .value("Dictionary", Byml::Type::Dictionary)
+    .value("OrderedDictionary", Byml::Type::OrderedDictionary)
+    .value("Bool", Byml::Type::Bool)
+    .value("Int", Byml::Type::Int)
+    .value("Float", Byml::Type::Float)
+    .value("UInt", Byml::Type::UInt)
+    .value("Int64", Byml::Type::Int64)
+    .value("UInt64", Byml::Type::UInt64)
+    .value("Double", Byml::Type::Double)
+    .finalize();
+
+  py::class_<Byml::AlignedBinary>(m, "AlignedBinary")
+      .def(py::init<>())
       .def(py::init<std::vector<u8>, U32>())
       .def(py::self == py::self)
       .def_readwrite("data", &Byml::AlignedBinary::data)
@@ -124,6 +152,18 @@ void BindByml(py::module& parent) {
       .def("__copy__", [](const Byml::AlignedBinary& f) { return Byml::AlignedBinary(f); })
       .def("__deepcopy__",
            [](const Byml::AlignedBinary& f, py::dict) { return Byml::AlignedBinary(f); });
+  
+  py::class_<Byml::MonoTypedArray>(m, "MonoTypedArray")
+      .def(py::init<>())
+      .def(py::init<Byml::Type>())
+      .def(py::init<Byml::Array, Byml::Type>())
+      .def(py::self == py::self)
+      .def_readwrite("elements", &Byml::MonoTypedArray::elements)
+      .def_readwrite("type", &Byml::MonoTypedArray::type)
+      .def("__copy__", [](const Byml::MonoTypedArray& f) { return Byml::MonoTypedArray(f); })
+      .def("__deepcopy__",
+           [](const Byml::MonoTypedArray& f, py::dict) { return Byml::MonoTypedArray(f); });
+
 
   m.def("from_binary", &Byml::FromBinary, "buffer"_a, py::return_value_policy::move,
         ":return: An Array, Dictionary, or Hash (value type is possible on versions >= 8).");

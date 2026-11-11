@@ -90,6 +90,7 @@ constexpr NodeType GetNodeType(Byml::Type type) {
       NodeType::Binary,
       NodeType::AlignedBinary,
       NodeType::Array,
+      NodeType::MonoTypedArray,
       NodeType::Dictionary,
       NodeType::OrderedDictionary,
       NodeType::Bool,
@@ -103,6 +104,31 @@ constexpr NodeType GetNodeType(Byml::Type type) {
   return map[u8(type)];
 }
 
+constexpr Byml::Type GetBymlType(NodeType type) {
+  switch (type) {
+    case NodeType::Hash32: return Byml::Type::Hash32;
+    case NodeType::Hash64: return Byml::Type::Hash64;
+    case NodeType::OrderedHash32: return Byml::Type::OrderedHash32;
+    case NodeType::OrderedHash64: return Byml::Type::OrderedHash64;
+    case NodeType::String: return Byml::Type::String;
+    case NodeType::Binary: return Byml::Type::Binary;
+    case NodeType::AlignedBinary: return Byml::Type::AlignedBinary;
+    case NodeType::Array: return Byml::Type::Array;
+    case NodeType::Dictionary: return Byml::Type::Dictionary;
+    case NodeType::OrderedDictionary: return Byml::Type::OrderedDictionary;
+    case NodeType::MonoTypedArray: return Byml::Type::MonoTypedArray;
+    case NodeType::Bool: return Byml::Type::Bool;
+    case NodeType::Int: return Byml::Type::Int;
+    case NodeType::Float: return Byml::Type::Float;
+    case NodeType::UInt: return Byml::Type::UInt;
+    case NodeType::Int64: return Byml::Type::Int64;
+    case NodeType::UInt64: return Byml::Type::UInt64;
+    case NodeType::Double: return Byml::Type::Double;
+    case NodeType::Null: return Byml::Type::Null;
+    default: throw InvalidDataError("Invalid node type");
+  }
+}
+
 template <typename T = NodeType>
 constexpr bool IsOrderedContainerType(T type) {
   return type == T::OrderedHash32 || type == T::OrderedHash64 || type == T::OrderedDictionary;
@@ -110,7 +136,7 @@ constexpr bool IsOrderedContainerType(T type) {
 
 template <typename T = NodeType>
 constexpr bool IsContainerType(T type) {
-  return type == T::Array || type == T::Dictionary || type == T::Hash32 || type == T::Hash64 ||
+  return type == T::Array || type == T::MonoTypedArray || type == T::Dictionary || type == T::Hash32 || type == T::Hash64 ||
          IsOrderedContainerType(type);
 }
 
@@ -344,6 +370,18 @@ private:
     return Byml{std::move(result)};
   }
 
+  Byml ParseMonoTypedArrayNode(u32 offset, u32 size) {
+    Byml::MonoTypedArray result;
+    result.elements.reserve(size);
+    const u32 values_offset = util::AlignUp(offset + 4 + 1, 4);
+    const auto type = m_reader.Read<NodeType>(offset + 4);
+    result.type = GetBymlType(type.value());
+    for (u32 i = 0; i < size; ++i) {
+      result.elements.emplace_back(ParseContainerChildNode(values_offset + 4 * i, type.value()));
+    }
+    return Byml{std::move(result)};
+  }
+
   template <bool Ordered>
   Byml ParseDictionaryNode(u32 offset, u32 size) {
     using ResultType = std::conditional_t<Ordered, Byml::OrderedDictionary, Byml::Dictionary>;
@@ -392,6 +430,8 @@ private:
       return ParseHashNode<Byml::OrderedHash64, true>(offset, *num_entries);
     case NodeType::Array:
       return ParseArrayNode(offset, *num_entries);
+    case NodeType::MonoTypedArray:
+      return ParseMonoTypedArrayNode(offset, *num_entries);
     case NodeType::Dictionary:
       return ParseDictionaryNode<false>(offset, *num_entries);
     case NodeType::OrderedDictionary:
@@ -443,6 +483,15 @@ struct WriteContext {
         for (const auto& value : data.GetArray())
           self(self, value);
         break;
+      case Byml::Type::MonoTypedArray: {
+        const auto& array = data.GetMonoTypedArray();
+        for (const auto& value : array.elements) {
+          if (value.GetType() != array.type)
+            throw TypeError("MonoTypedArray has non-matching element type");
+          self(self, value);
+        }
+        break;
+      }
       case Byml::Type::Dictionary:
         for (const auto& [key, value] : data.GetDictionary()) {
           hash_key_table.Add(key);
@@ -456,24 +505,20 @@ struct WriteContext {
         }
         break;
       case Byml::Type::Hash32:
-        for (const auto& [key, value] : data.GetHash32()) {
+        for (const auto& [key, value] : data.GetHash32())
           self(self, value);
-        }
         break;
       case Byml::Type::Hash64:
-        for (const auto& [key, value] : data.GetHash64()) {
+        for (const auto& [key, value] : data.GetHash64())
           self(self, value);
-        }
         break;
       case Byml::Type::OrderedHash32:
-        for (const auto& [key, value] : data.GetOrderedHash32()) {
+        for (const auto& [key, value] : data.GetOrderedHash32())
           self(self, value);
-        }
         break;
       case Byml::Type::OrderedHash64:
-        for (const auto& [key, value] : data.GetOrderedHash64()) {
+        for (const auto& [key, value] : data.GetOrderedHash64())
           self(self, value);
-        }
         break;
       default:
         break;
@@ -648,6 +693,16 @@ struct WriteContext {
         writer.Write(GetNodeType(item.GetType()));
       writer.AlignUp(4);
       for (const auto& item : array)
+        write_container_item(item);
+      break;
+    }
+    case Byml::Type::MonoTypedArray: {
+      const auto& array = data.GetMonoTypedArray();
+      writer.Write(NodeType::MonoTypedArray);
+      writer.WriteU24(array.elements.size());
+      writer.Write(GetNodeType(array.type));
+      writer.AlignUp(4);
+      for (const auto& item : array.elements)
         write_container_item(item);
       break;
     }
@@ -850,6 +905,10 @@ Byml::Array& Byml::GetArray() {
   return Get<Type::Array>();
 }
 
+Byml::MonoTypedArray& Byml::GetMonoTypedArray() {
+  return Get<Type::MonoTypedArray>();
+}
+
 Byml::String& Byml::GetString() {
   return Get<Type::String>();
 }
@@ -888,6 +947,10 @@ const Byml::OrderedDictionary& Byml::GetOrderedDictionary() const {
 
 const Byml::Array& Byml::GetArray() const {
   return Get<Type::Array>();
+}
+
+const Byml::MonoTypedArray& Byml::GetMonoTypedArray() const {
+  return Get<Type::MonoTypedArray>();
 }
 
 const Byml::String& Byml::GetString() const {
@@ -969,6 +1032,18 @@ u64 Byml::GetUInt64() const {
 
 f64 Byml::GetDouble() const {
   return Get<Type::Double>();
+}
+
+Byml::MonoTypedArray::MonoTypedArray(Array&& elements_, Type type_) : elements(std::move(elements_)), type(type_) {
+  for (const auto& item : elements)
+    if (item.GetType() != type)
+      throw TypeError("MonoTypedArray has non-matching element type");
+}
+
+Byml::MonoTypedArray::MonoTypedArray(const Array& elements_, Type type_) : elements(elements_), type(type_) {
+  for (const auto& item : elements)
+    if (item.GetType() != type)
+      throw TypeError("MonoTypedArray has non-matching element type");
 }
 
 }  // namespace oead
