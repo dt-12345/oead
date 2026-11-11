@@ -81,24 +81,12 @@ enum class NodeType : u8 {
 
 constexpr NodeType GetNodeType(Byml::Type type) {
   constexpr std::array map{
-      NodeType::Null,
-      NodeType::Hash32,
-      NodeType::Hash64,
-      NodeType::OrderedHash32,
-      NodeType::OrderedHash64,
-      NodeType::String,
-      NodeType::Binary,
-      NodeType::AlignedBinary,
-      NodeType::Array,
-      NodeType::MonoTypedArray,
-      NodeType::Dictionary,
-      NodeType::OrderedDictionary,
-      NodeType::Bool,
-      NodeType::Int,
-      NodeType::Float,
-      NodeType::UInt,
-      NodeType::Int64,
-      NodeType::UInt64,
+      NodeType::Null,           NodeType::Hash32,        NodeType::Hash64,
+      NodeType::OrderedHash32,  NodeType::OrderedHash64, NodeType::String,
+      NodeType::Binary,         NodeType::AlignedBinary, NodeType::Array,
+      NodeType::MonoTypedArray, NodeType::Dictionary,    NodeType::OrderedDictionary,
+      NodeType::Bool,           NodeType::Int,           NodeType::Float,
+      NodeType::UInt,           NodeType::Int64,         NodeType::UInt64,
       NodeType::Double,
   };
   return map[u8(type)];
@@ -106,26 +94,46 @@ constexpr NodeType GetNodeType(Byml::Type type) {
 
 constexpr Byml::Type GetBymlType(NodeType type) {
   switch (type) {
-    case NodeType::Hash32: return Byml::Type::Hash32;
-    case NodeType::Hash64: return Byml::Type::Hash64;
-    case NodeType::OrderedHash32: return Byml::Type::OrderedHash32;
-    case NodeType::OrderedHash64: return Byml::Type::OrderedHash64;
-    case NodeType::String: return Byml::Type::String;
-    case NodeType::Binary: return Byml::Type::Binary;
-    case NodeType::AlignedBinary: return Byml::Type::AlignedBinary;
-    case NodeType::Array: return Byml::Type::Array;
-    case NodeType::Dictionary: return Byml::Type::Dictionary;
-    case NodeType::OrderedDictionary: return Byml::Type::OrderedDictionary;
-    case NodeType::MonoTypedArray: return Byml::Type::MonoTypedArray;
-    case NodeType::Bool: return Byml::Type::Bool;
-    case NodeType::Int: return Byml::Type::Int;
-    case NodeType::Float: return Byml::Type::Float;
-    case NodeType::UInt: return Byml::Type::UInt;
-    case NodeType::Int64: return Byml::Type::Int64;
-    case NodeType::UInt64: return Byml::Type::UInt64;
-    case NodeType::Double: return Byml::Type::Double;
-    case NodeType::Null: return Byml::Type::Null;
-    default: throw InvalidDataError("Invalid node type");
+  case NodeType::Hash32:
+    return Byml::Type::Hash32;
+  case NodeType::Hash64:
+    return Byml::Type::Hash64;
+  case NodeType::OrderedHash32:
+    return Byml::Type::OrderedHash32;
+  case NodeType::OrderedHash64:
+    return Byml::Type::OrderedHash64;
+  case NodeType::String:
+    return Byml::Type::String;
+  case NodeType::Binary:
+    return Byml::Type::Binary;
+  case NodeType::AlignedBinary:
+    return Byml::Type::AlignedBinary;
+  case NodeType::Array:
+    return Byml::Type::Array;
+  case NodeType::Dictionary:
+    return Byml::Type::Dictionary;
+  case NodeType::OrderedDictionary:
+    return Byml::Type::OrderedDictionary;
+  case NodeType::MonoTypedArray:
+    return Byml::Type::MonoTypedArray;
+  case NodeType::Bool:
+    return Byml::Type::Bool;
+  case NodeType::Int:
+    return Byml::Type::Int;
+  case NodeType::Float:
+    return Byml::Type::Float;
+  case NodeType::UInt:
+    return Byml::Type::UInt;
+  case NodeType::Int64:
+    return Byml::Type::Int64;
+  case NodeType::UInt64:
+    return Byml::Type::UInt64;
+  case NodeType::Double:
+    return Byml::Type::Double;
+  case NodeType::Null:
+    return Byml::Type::Null;
+  default:
+    throw InvalidDataError("Invalid node type");
   }
 }
 
@@ -136,8 +144,8 @@ constexpr bool IsOrderedContainerType(T type) {
 
 template <typename T = NodeType>
 constexpr bool IsContainerType(T type) {
-  return type == T::Array || type == T::MonoTypedArray || type == T::Dictionary || type == T::Hash32 || type == T::Hash64 ||
-         IsOrderedContainerType(type);
+  return type == T::Array || type == T::MonoTypedArray || type == T::Dictionary ||
+         type == T::Hash32 || type == T::Hash64 || IsOrderedContainerType(type);
 }
 
 template <typename T = NodeType>
@@ -1034,13 +1042,15 @@ f64 Byml::GetDouble() const {
   return Get<Type::Double>();
 }
 
-Byml::MonoTypedArray::MonoTypedArray(Array&& elements_, Type type_) : elements(std::move(elements_)), type(type_) {
+Byml::MonoTypedArray::MonoTypedArray(Array&& elements_, Type type_)
+    : elements(std::move(elements_)), type(type_) {
   for (const auto& item : elements)
     if (item.GetType() != type)
       throw TypeError("MonoTypedArray has non-matching element type");
 }
 
-Byml::MonoTypedArray::MonoTypedArray(const Array& elements_, Type type_) : elements(elements_), type(type_) {
+Byml::MonoTypedArray::MonoTypedArray(const Array& elements_, Type type_)
+    : elements(elements_), type(type_) {
   for (const auto& item : elements)
     if (item.GetType() != type)
       throw TypeError("MonoTypedArray has non-matching element type");

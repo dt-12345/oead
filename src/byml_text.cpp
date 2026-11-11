@@ -380,7 +380,7 @@ std::string Byml::ToText() const {
           emitter.EmitString("Type");
           emitter.EmitString(byml::ConvertBymlTypeToString(v.type));
           emitter.EmitString("Elements");
-          
+
           yaml_event_t event;
           const auto seq_style = byml::ShouldUseInlineYamlStyle(v) ? YAML_FLOW_SEQUENCE_STYLE :
                                                                      YAML_BLOCK_SEQUENCE_STYLE;
