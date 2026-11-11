@@ -308,32 +308,26 @@ private:
     const size_t index_size = count < 0x100  ? sizeof(u8) :
                               count < 0x1000 ? sizeof(u16) :
                                                sizeof(u32);
-    std::vector<u32> sorted_indices(count);
-    std::iota(sorted_indices.begin(), sorted_indices.end(), 0);
-
     m_reader.Seek(offset);
-    std::vector<u32> orig_indices(count);
+    std::vector<u32> indices(count);
     for (u32 i = 0; i < count; ++i) {
       switch (index_size) {
       case sizeof(u8):
-        orig_indices[i] = m_reader.Read<u8>().value();
+        indices[i] = m_reader.Read<u8>().value();
         break;
       case sizeof(u16):
-        orig_indices[i] = m_reader.Read<u16>().value();
+        indices[i] = m_reader.Read<u16>().value();
         break;
       case sizeof(u32):
-        orig_indices[i] = m_reader.Read<u32>().value();
+        indices[i] = m_reader.Read<u32>().value();
         break;
       }
 
-      if (orig_indices[i] >= count)
+      if (indices[i] >= count)
         throw InvalidDataError("Invalid index remapping");
     }
 
-    std::sort(sorted_indices.begin(), sorted_indices.end(),
-              [&](u32 lhs, u32 rhs) { return orig_indices.at(lhs) < orig_indices.at(rhs); });
-
-    return sorted_indices;
+    return indices;
   }
 
   template <typename T, bool Ordered>
@@ -354,14 +348,16 @@ private:
         const auto type = m_reader.Read<NodeType>(types_offset + index);
         const auto key = m_reader.Read<KeyType>(offset + 4 + entry_size * index);
         result.emplace(key.value(),
-                       ParseContainerChildNode(offset + 4 + entry_size * index + 4, type.value()));
+                       ParseContainerChildNode(offset + 4 + entry_size * index + sizeof(KeyType),
+                                               type.value()));
       }
     } else {
       for (u32 i = 0; i < size; ++i) {
         const auto type = m_reader.Read<NodeType>(types_offset + i);
         const auto key = m_reader.Read<KeyType>(offset + 4 + entry_size * i);
-        result.emplace(key.value(),
-                       ParseContainerChildNode(offset + 4 + entry_size * i + 4, type.value()));
+        result.emplace(
+            key.value(),
+            ParseContainerChildNode(offset + 4 + entry_size * i + sizeof(KeyType), type.value()));
       }
     }
     return Byml{std::move(result)};
@@ -625,32 +621,34 @@ struct WriteContext {
       const auto& hash = data.GetOrderedHash32();
       writer.Write(NodeType::OrderedHash32);
       writer.WriteU24(hash.size());
-      absl::btree_map<u32, std::pair<u32, std::reference_wrapper<const Byml>>> ordered{};
-      for (u32 i = 0; i < hash.size(); ++i) {
+      std::vector<u32> sorted(hash.size());
+      std::iota(sorted.begin(), sorted.end(), 0);
+      std::sort(sorted.begin(), sorted.end(), [&](u32 lhs, u32 rhs) {
+        return hash.values_container()[lhs].first < hash.values_container()[rhs].first;
+      });
+      for (const auto i : sorted) {
         const auto& [key, value] = hash.values_container()[i];
-        ordered.emplace(key, std::make_pair(i, std::cref(value)));
-      }
-      for (const auto& [key, value] : ordered) {
         writer.Write(key);
-        write_container_item(value.second);
+        write_container_item(value);
       }
-      for (const auto& [key, value] : ordered) {
-        writer.Write(GetNodeType(value.second.get().GetType()));
+      for (const auto i : sorted) {
+        const auto& [_, value] = hash.values_container()[i];
+        writer.Write(GetNodeType(value.GetType()));
       }
       writer.AlignUp(4);
       const size_t index_size = hash.size() < 0x100  ? sizeof(u8) :
                                 hash.size() < 0x1000 ? sizeof(u16) :
                                                        sizeof(u32);
-      for (const auto& [_, value] : ordered) {
+      for (const auto i : sorted) {
         switch (index_size) {
         case sizeof(u8):
-          writer.Write(static_cast<u8>(value.first));
+          writer.Write(static_cast<u8>(i));
           break;
         case sizeof(u16):
-          writer.Write(static_cast<u16>(value.first));
+          writer.Write(static_cast<u16>(i));
           break;
         case sizeof(u32):
-          writer.Write(static_cast<u32>(value.first));
+          writer.Write(static_cast<u32>(i));
           break;
         }
       }
@@ -661,32 +659,34 @@ struct WriteContext {
       const auto& hash = data.GetOrderedHash64();
       writer.Write(NodeType::OrderedHash64);
       writer.WriteU24(hash.size());
-      absl::btree_map<u64, std::pair<u32, std::reference_wrapper<const Byml>>> ordered{};
-      for (u32 i = 0; i < hash.size(); ++i) {
+      std::vector<u32> sorted(hash.size());
+      std::iota(sorted.begin(), sorted.end(), 0);
+      std::sort(sorted.begin(), sorted.end(), [&](u32 lhs, u32 rhs) {
+        return hash.values_container()[lhs].first < hash.values_container()[rhs].first;
+      });
+      for (const auto i : sorted) {
         const auto& [key, value] = hash.values_container()[i];
-        ordered.emplace(key, std::make_pair(i, std::cref(value)));
-      }
-      for (const auto& [key, value] : ordered) {
         writer.Write(key);
-        write_container_item(value.second);
+        write_container_item(value);
       }
-      for (const auto& [key, value] : ordered) {
-        writer.Write(GetNodeType(value.second.get().GetType()));
+      for (const auto i : sorted) {
+        const auto& [_, value] = hash.values_container()[i];
+        writer.Write(GetNodeType(value.GetType()));
       }
       writer.AlignUp(4);
       const size_t index_size = hash.size() < 0x100  ? sizeof(u8) :
                                 hash.size() < 0x1000 ? sizeof(u16) :
                                                        sizeof(u32);
-      for (const auto& [_, value] : ordered) {
+      for (const auto i : sorted) {
         switch (index_size) {
         case sizeof(u8):
-          writer.Write(static_cast<u8>(value.first));
+          writer.Write(static_cast<u8>(i));
           break;
         case sizeof(u16):
-          writer.Write(static_cast<u16>(value.first));
+          writer.Write(static_cast<u16>(i));
           break;
         case sizeof(u32):
-          writer.Write(static_cast<u32>(value.first));
+          writer.Write(static_cast<u32>(i));
           break;
         }
       }
@@ -730,31 +730,31 @@ struct WriteContext {
       const auto& hash = data.GetOrderedDictionary();
       writer.Write(NodeType::OrderedDictionary);
       writer.WriteU24(hash.size());
-      absl::btree_map<std::string_view, std::pair<u32, std::reference_wrapper<const Byml>>>
-          ordered{};
-      for (u32 i = 0; i < hash.size(); ++i) {
+      std::vector<u32> sorted(hash.size());
+      std::iota(sorted.begin(), sorted.end(), 0);
+      std::sort(sorted.begin(), sorted.end(), [&](u32 lhs, u32 rhs) {
+        return hash.values_container()[lhs].first < hash.values_container()[rhs].first;
+      });
+      for (const auto i : sorted) {
         const auto& [key, value] = hash.values_container()[i];
-        ordered.emplace(key, std::make_pair(i, std::cref(value)));
-      }
-      for (const auto& [key, value] : ordered) {
-        const auto type = GetNodeType(value.second.get().GetType());
+        const auto type = GetNodeType(value.GetType());
         writer.WriteU24(hash_key_table.GetIndex(key));
         writer.Write(type);
-        write_container_item(value.second);
+        write_container_item(value);
       }
       const size_t index_size = hash.size() < 0x100  ? sizeof(u8) :
                                 hash.size() < 0x1000 ? sizeof(u16) :
                                                        sizeof(u32);
-      for (const auto& [_, value] : ordered) {
+      for (const auto i : sorted) {
         switch (index_size) {
         case sizeof(u8):
-          writer.Write(static_cast<u8>(value.first));
+          writer.Write(static_cast<u8>(i));
           break;
         case sizeof(u16):
-          writer.Write(static_cast<u16>(value.first));
+          writer.Write(static_cast<u16>(i));
           break;
         case sizeof(u32):
-          writer.Write(static_cast<u32>(value.first));
+          writer.Write(static_cast<u32>(i));
           break;
         }
       }

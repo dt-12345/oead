@@ -54,3 +54,69 @@ def test_wrong_self_raises_type_error():
         oead.byml.Dictionary.keys(5)
     with pytest.raises(TypeError):
         oead.aamp.ParameterMap.keys(5)
+
+
+def test_ordered_hash32_serialization():
+    hash32 = oead.byml.OrderedHash32({
+        1 : oead.U32(1),
+        2 : oead.U32(2),
+        3 : oead.U32(3),
+        4 : oead.U32(4),
+        5 : oead.U32(5),
+    })
+    serialized = oead.byml.from_binary(oead.byml.to_binary(hash32, False, 10))
+    assert serialized[1] == hash32[1]
+    assert serialized[2] == hash32[2]
+    assert serialized[3] == hash32[3]
+    assert serialized[4] == hash32[4]
+    assert serialized[5] == hash32[5]
+    items = list(serialized.items())
+    assert items[0][1] == hash32[1]
+    assert items[1][1] == hash32[2]
+    assert items[2][1] == hash32[3]
+    assert items[3][1] == hash32[4]
+    assert items[4][1] == hash32[5]
+
+
+def test_ordered_hash64_serialization():
+    hash64 = oead.byml.OrderedHash64({
+        1 : oead.U32(1),
+        2 : oead.U32(2),
+        3 : oead.U32(3),
+        4 : oead.U32(4),
+        5 : oead.U32(5),
+    })
+    serialized = oead.byml.from_binary(oead.byml.to_binary(hash64, False, 10))
+    assert serialized[1] == hash64[1]
+    assert serialized[2] == hash64[2]
+    assert serialized[3] == hash64[3]
+    assert serialized[4] == hash64[4]
+    assert serialized[5] == hash64[5]
+    items = list(serialized.items())
+    assert items[0][1] == hash64[1]
+    assert items[1][1] == hash64[2]
+    assert items[2][1] == hash64[3]
+    assert items[3][1] == hash64[4]
+    assert items[4][1] == hash64[5]
+
+
+def test_ordered_dict_serialization():
+    ordered = oead.byml.OrderedDictionary({
+        "1" : oead.U32(1),
+        "2" : oead.U32(2),
+        "3" : oead.U32(3),
+        "4" : oead.U32(4),
+        "5" : oead.U32(5),
+    })
+    serialized = oead.byml.from_binary(oead.byml.to_binary(ordered, False, 10))
+    assert serialized["1"] == ordered["1"]
+    assert serialized["2"] == ordered["2"]
+    assert serialized["3"] == ordered["3"]
+    assert serialized["4"] == ordered["4"]
+    assert serialized["5"] == ordered["5"]
+    items = list(serialized.items())
+    assert items[0][1] == ordered["1"]
+    assert items[1][1] == ordered["2"]
+    assert items[2][1] == ordered["3"]
+    assert items[3][1] == ordered["4"]
+    assert items[4][1] == ordered["5"]
